@@ -24,7 +24,7 @@ Pass the Gitea host and access token as command-line flags or environment variab
 
 The server supports MCP up to `2026-07-28` and negotiates down to the client's version, advertising only the `tools` capability. Tool and Gitea failures return a `tools/call` result with `result.isError: true`, while malformed requests and server faults stay JSON-RPC errors.
 
-HTTP is always stateless: `/mcp` accepts POST only, without `Mcp-Session-Id`, standalone SSE or `Last-Event-ID` resumability. Origins are validated, and reverse proxies must forward `Mcp-Protocol-Version`, `Mcp-Method` and `Mcp-Name` unchanged. `Authorization: Bearer <token>` and `Authorization: token <token>` pass a Gitea credential per request, which is credential passthrough rather than MCP OAuth.
+HTTP is always stateless: `/mcp` accepts POST only, without `Mcp-Session-Id`, standalone SSE or `Last-Event-ID` resumability. Origins are validated, and reverse proxies must forward `Mcp-Protocol-Version`, `Mcp-Method` and `Mcp-Name` unchanged. `Authorization: Bearer <token>` and `Authorization: token <token>` pass a Gitea credential per request, which is credential passthrough rather than MCP OAuth. Credentials Gitea rejects get a `401`, so clients can refresh them.
 
 HTTP mode also serves `/healthz`, which returns `200 OK` when the server is up. The Docker image's built-in `HEALTHCHECK` runs `gitea-mcp -healthcheck`, which dials `http://127.0.0.1:<port>/healthz` using the same `-p`/`-port` value (or `8080` by default) and exits `0` on success or `1` on failure. Stdio deployments do not serve `/healthz`, so override or disable the image's `HEALTHCHECK` when running in stdio mode.
 
@@ -36,7 +36,7 @@ Clients that cannot be given a token, such as Claude.ai on web and mobile, need 
 gitea-mcp -t http -oauth -oauth-public-url https://mcp.example.com -H https://gitea.example.com
 ```
 
-The server then serves `/.well-known/oauth-protected-resource`, naming the Gitea instance as the authorization server, and answers unauthenticated `/mcp` requests with a `401` challenge. Users act with their own Gitea account instead of a shared static token, and `-r` narrows the requested scopes to read-only.
+The server then serves `/.well-known/oauth-protected-resource`, naming the Gitea instance as the authorization server, and answers `/mcp` requests with a missing or rejected token with a `401` challenge. Users act with their own Gitea account instead of a shared static token, and `-r` narrows the requested scopes to read-only.
 
 Gitea has no dynamic client registration, so register the application once under **Settings → Applications → Create OAuth2 Application**, leaving **Confidential Client** unchecked so the flow uses PKCE. Set the redirect URI to `https://claude.ai/api/mcp/auth_callback` for Claude on web, desktop and mobile, adding `http://127.0.0.1/callback` for Claude Code, which Gitea matches on any port. Users enter the client ID under **Advanced settings** when adding the connector.
 

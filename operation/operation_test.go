@@ -12,9 +12,15 @@ import (
 const metadataPath = "/.well-known/oauth-protected-resource" + mcpPath
 
 func TestNewHTTPServerOAuth(t *testing.T) {
+	giteaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "token expired" {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	t.Cleanup(giteaServer.Close)
 	origOAuth, origURL, origHost := flag.OAuth, flag.OAuthPublicURL, flag.Host
 	t.Cleanup(func() { flag.OAuth, flag.OAuthPublicURL, flag.Host = origOAuth, origURL, origHost })
-	flag.OAuth, flag.OAuthPublicURL, flag.Host = true, "https://mcp.example.com", "https://gitea.example.com"
+	flag.OAuth, flag.OAuthPublicURL, flag.Host = true, "https://mcp.example.com", giteaServer.URL
 	handler := newHTTPServer("", newMCPServer("test")).Handler
 
 	// Only the flag wiring is checked here, pkg/oauth pins the document itself.
@@ -24,7 +30,7 @@ func TestNewHTTPServerOAuth(t *testing.T) {
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 		}
-		want := `"resource":"https://mcp.example.com/mcp","authorization_servers":["https://gitea.example.com"]`
+		want := `"resource":"https://mcp.example.com/mcp","authorization_servers":["` + giteaServer.URL + `"]`
 		if got := recorder.Body.String(); !strings.Contains(got, want) {
 			t.Errorf("body = %s, want it to contain %s", got, want)
 		}
@@ -80,6 +86,14 @@ func TestNewHTTPServerOAuth(t *testing.T) {
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, mcpPath, nil))
 		if recorder.Code == http.StatusUnauthorized {
 			t.Error("unauthenticated request challenged with OAuth disabled")
+		}
+
+		request := httptest.NewRequest(http.MethodPost, mcpPath, nil)
+		request.Header.Set("Authorization", "token expired")
+		recorder = httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if got := recorder.Header().Get("WWW-Authenticate"); recorder.Code != http.StatusUnauthorized || got != `Bearer error="invalid_token"` {
+			t.Errorf("rejected token: status = %d, WWW-Authenticate = %q", recorder.Code, got)
 		}
 	})
 }

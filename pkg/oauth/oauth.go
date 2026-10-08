@@ -3,6 +3,7 @@
 package oauth
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -92,17 +93,26 @@ func (p *Provider) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle(wellKnownPath, p.metadata) // clients probe the bare path too
 }
 
-// Protect validates the Host and challenges requests without a usable token, so
-// the client starts the OAuth flow. Token validity is left to Gitea.
-func (p *Provider) Protect(next http.Handler) http.Handler {
+// Protect challenges missing tokens to start the OAuth flow and rejected ones so clients refresh them, a nil Provider only the latter.
+func (p *Provider) Protect(next http.Handler, rejected func(ctx context.Context, token string) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !p.allowedHost(r.Host) {
+		if p != nil && !p.allowedHost(r.Host) {
 			http.Error(w, "Host must be "+p.host+" or loopback", http.StatusMisdirectedRequest)
 			return
 		}
-		if _, ok := ParseToken(r.Header.Get("Authorization")); !ok {
+		token, ok := ParseToken(r.Header.Get("Authorization"))
+		if p != nil && !ok {
 			w.Header().Set("WWW-Authenticate", p.challenge)
 			http.Error(w, "authorization required", http.StatusUnauthorized)
+			return
+		}
+		if ok && rejected(r.Context(), token) {
+			challenge := `Bearer error="invalid_token"`
+			if p != nil {
+				challenge = p.challenge + `, error="invalid_token"`
+			}
+			w.Header().Set("WWW-Authenticate", challenge)
+			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)

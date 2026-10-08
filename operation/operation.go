@@ -28,6 +28,7 @@ import (
 	"gitea.com/gitea/gitea-mcp/operation/wiki"
 	mcpContext "gitea.com/gitea/gitea-mcp/pkg/context"
 	"gitea.com/gitea/gitea-mcp/pkg/flag"
+	"gitea.com/gitea/gitea-mcp/pkg/gitea"
 	"gitea.com/gitea/gitea-mcp/pkg/log"
 	"gitea.com/gitea/gitea-mcp/pkg/oauth"
 	"gitea.com/gitea/gitea-mcp/pkg/tool"
@@ -107,17 +108,17 @@ func newHTTPServer(addr string, s *mcp.Server) *http.Server {
 			DisableLocalhostProtection: flag.OAuth,
 		},
 	)
+	var provider *oauth.Provider
 	if flag.OAuth {
-		provider := oauth.New(oauth.Config{
+		provider = oauth.New(oauth.Config{
 			BaseURL:  flag.OAuthPublicURL,
 			MCPPath:  mcpPath,
 			GiteaURL: flag.Host,
 			ReadOnly: flag.ReadOnly,
 		})
 		provider.RegisterRoutes(mux)
-		handler = provider.Protect(handler)
 	}
-	mux.Handle(mcpPath, protectMCPOrigin(handler))
+	mux.Handle(mcpPath, protectMCPOrigin(provider.Protect(handler, gitea.TokenRejected)))
 	mux.HandleFunc("/healthz", handleHealthz)
 	return &http.Server{
 		Addr:              addr,

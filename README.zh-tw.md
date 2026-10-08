@@ -24,7 +24,7 @@ Gitea 主機與存取令牌可透過命令列參數或環境變數提供，命�
 
 伺服器支援最高至 `2026-07-28` 的 MCP 協定，並向下協商到客戶端的版本，僅宣告 `tools` 能力。工具與 Gitea 執行失敗會在 `tools/call` 結果中回傳並設定 `result.isError: true`，格式錯誤的請求與伺服器故障仍回傳 JSON-RPC 錯誤。
 
-HTTP 傳輸固定為無狀態：`/mcp` 只接受 POST，沒有 `Mcp-Session-Id`、獨立 SSE 與 `Last-Event-ID` 斷點續傳。伺服器會驗證來源，反向代理必須原樣轉發 `Mcp-Protocol-Version`、`Mcp-Method` 與 `Mcp-Name`。`Authorization: Bearer <令牌>` 與 `Authorization: token <令牌>` 會在每次請求中傳遞 Gitea 憑證，這是憑證透傳，而不是 MCP OAuth。加上 `-oauth` 可啟用 MCP OAuth，詳見下文。
+HTTP 傳輸固定為無狀態：`/mcp` 只接受 POST，沒有 `Mcp-Session-Id`、獨立 SSE 與 `Last-Event-ID` 斷點續傳。伺服器會驗證來源，反向代理必須原樣轉發 `Mcp-Protocol-Version`、`Mcp-Method` 與 `Mcp-Name`。`Authorization: Bearer <令牌>` 與 `Authorization: token <令牌>` 會在每次請求中傳遞 Gitea 憑證，這是憑證透傳，而不是 MCP OAuth。遭 Gitea 拒絕的憑證會收到 `401`，讓用戶端重新整理。加上 `-oauth` 可啟用 MCP OAuth，詳見下文。
 
 HTTP 模式也會提供 `/healthz` 端點，伺服器正常運作時回傳 `200 OK`。Docker 映像內建的 `HEALTHCHECK` 會執行 `gitea-mcp -healthcheck`，它使用與 `-p`/`-port` 相同的連接埠（預設 `8080`）連線 `http://127.0.0.1:<連接埠>/healthz`，成功時結束碼為 `0`，失敗時為 `1`。stdio 部署不會提供 `/healthz`，因此在 stdio 模式下運作時應覆寫或停用映像內建的 `HEALTHCHECK`。
 
@@ -36,7 +36,7 @@ HTTP 模式也會提供 `/healthz` 端點，伺服器正常運作時回傳 `200 
 gitea-mcp -t http -oauth -oauth-public-url https://mcp.example.com -H https://gitea.example.com
 ```
 
-伺服器隨後會提供 `/.well-known/oauth-protected-resource`，將 Gitea 執行個體宣告為授權伺服器，並對未認證的 `/mcp` 請求回傳 `401` 質詢。使用者以自己的 Gitea 帳號操作，而不是共用一個靜態權杖，`-r` 會把請求的權限範圍收窄為唯讀。
+伺服器隨後會提供 `/.well-known/oauth-protected-resource`，將 Gitea 執行個體宣告為授權伺服器，並對缺少權杖或權杖遭拒絕的 `/mcp` 請求回傳 `401` 質詢。使用者以自己的 Gitea 帳號操作，而不是共用一個靜態權杖，`-r` 會把請求的權限範圍收窄為唯讀。
 
 Gitea 不支援動態用戶端註冊，因此需要在 **設定 → 應用程式 → 建立 OAuth2 應用程式** 中註冊一次，並且不要勾選 **機密用戶端**，這樣流程使用 PKCE。重新導向 URI 填 `https://claude.ai/api/mcp/auth_callback`，適用於網頁版、桌面版與行動版 Claude；為 Claude Code 再新增 `http://127.0.0.1/callback`，Gitea 對任意連接埠都能比對。使用者在新增連接器時把 client ID 填入 **進階設定**。
 

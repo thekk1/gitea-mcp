@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,18 +72,20 @@ func TestProviderProtect(t *testing.T) {
 	var reached bool
 	handler := New(testConfig).Protect(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		reached = true
-	}))
+	}), func(_ context.Context, token string) bool { return token == "expired" })
 
 	for _, tt := range []struct {
-		name      string
-		host      string
-		header    string
-		wantCode  int
-		wantReach bool
+		name        string
+		host        string
+		header      string
+		wantCode    int
+		wantReach   bool
+		wantInvalid bool
 	}{
 		{name: "no credentials", wantCode: http.StatusUnauthorized},
 		{name: "unusable credentials", header: "Basic dXNlcjpwYXNz", wantCode: http.StatusUnauthorized},
 		{name: "bearer token", header: "Bearer sometoken", wantCode: http.StatusOK, wantReach: true},
+		{name: "rejected token", header: "Bearer expired", wantCode: http.StatusUnauthorized, wantInvalid: true},
 		// A proxy may forward its own Host rather than the public one.
 		{name: "loopback host", host: "127.0.0.1:8080", header: "Bearer sometoken", wantCode: http.StatusOK, wantReach: true},
 		{name: "localhost host", host: "localhost:8080", header: "Bearer sometoken", wantCode: http.StatusOK, wantReach: true},
@@ -113,6 +116,9 @@ func TestProviderProtect(t *testing.T) {
 			}
 			want := `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp", ` +
 				`scope="write:repository write:issue write:user write:organization write:notification write:package write:misc"`
+			if tt.wantInvalid {
+				want += `, error="invalid_token"`
+			}
 			if got := recorder.Header().Get("WWW-Authenticate"); got != want {
 				t.Errorf("WWW-Authenticate = %q, want %q", got, want)
 			}

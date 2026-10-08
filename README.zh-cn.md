@@ -24,7 +24,7 @@ Gitea 主机和访问令牌可通过命令行参数或环境变量提供，命�
 
 服务器支持最高至 `2026-07-28` 的 MCP 协议，并向下协商到客户端的版本，仅声明 `tools` 能力。工具和 Gitea 执行失败会在 `tools/call` 结果中返回并设置 `result.isError: true`，格式错误的请求和服务器故障仍返回 JSON-RPC 错误。
 
-HTTP 传输固定为无状态：`/mcp` 仅接受 POST，没有 `Mcp-Session-Id`、独立 SSE 和 `Last-Event-ID` 断点续传。服务器会验证来源，反向代理必须原样转发 `Mcp-Protocol-Version`、`Mcp-Method` 和 `Mcp-Name`。`Authorization: Bearer <令牌>` 和 `Authorization: token <令牌>` 会在每个请求中传递 Gitea 凭据，这是凭据透传，而不是 MCP OAuth。
+HTTP 传输固定为无状态：`/mcp` 仅接受 POST，没有 `Mcp-Session-Id`、独立 SSE 和 `Last-Event-ID` 断点续传。服务器会验证来源，反向代理必须原样转发 `Mcp-Protocol-Version`、`Mcp-Method` 和 `Mcp-Name`。`Authorization: Bearer <令牌>` 和 `Authorization: token <令牌>` 会在每个请求中传递 Gitea 凭据，这是凭据透传，而不是 MCP OAuth。被 Gitea 拒绝的凭据会收到 `401`，以便客户端刷新。
 
 HTTP 模式还提供 `/healthz` 端点，服务器正常运行时返回 `200 OK`。Docker 镜像内置的 `HEALTHCHECK` 会运行 `gitea-mcp -healthcheck`，它使用与 `-p`/`-port` 相同的端口（默认 `8080`）请求 `http://127.0.0.1:<端口>/healthz`，成功时退出码为 `0`，失败时为 `1`。stdio 部署不提供 `/healthz`，因此在 stdio 模式下运行时应覆盖或禁用镜像自带的 `HEALTHCHECK`。
 
@@ -36,7 +36,7 @@ HTTP 模式还提供 `/healthz` 端点，服务器正常运行时返回 `200 OK`
 gitea-mcp -t http -oauth -oauth-public-url https://mcp.example.com -H https://gitea.example.com
 ```
 
-服务器随后会提供 `/.well-known/oauth-protected-resource`，将 Gitea 实例声明为授权服务器，并对未认证的 `/mcp` 请求返回 `401` 质询。用户使用自己的 Gitea 账号操作，而不是共用一个静态令牌，`-r` 会把请求的权限范围收窄为只读。
+服务器随后会提供 `/.well-known/oauth-protected-resource`，将 Gitea 实例声明为授权服务器，并对缺少令牌或令牌被拒绝的 `/mcp` 请求返回 `401` 质询。用户使用自己的 Gitea 账号操作，而不是共用一个静态令牌，`-r` 会把请求的权限范围收窄为只读。
 
 Gitea 不支持动态客户端注册，因此需要在 **设置 → 应用 → 创建 OAuth2 应用** 中注册一次，并且不要勾选 **机密客户端**，这样流程使用 PKCE。重定向 URI 填 `https://claude.ai/api/mcp/auth_callback`，适用于网页版、桌面版和移动版 Claude；为 Claude Code 再添加 `http://127.0.0.1/callback`，Gitea 对任意端口都能匹配。用户在添加连接器时把 client ID 填入 **高级设置**。
 

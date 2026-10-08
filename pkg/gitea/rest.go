@@ -178,6 +178,11 @@ func DoJSON(ctx context.Context, method, path string, query url.Values, body, re
 	return resp.StatusCode, nil
 }
 
+func TokenRejected(ctx context.Context, token string) bool {
+	status, _ := DoJSON(context.WithValue(ctx, mcpContext.TokenContextKey, token), http.MethodGet, "user", nil, nil, nil)
+	return status == http.StatusUnauthorized
+}
+
 func attachmentHTTPClient(origin *url.URL) *http.Client {
 	return &http.Client{
 		Transport: sharedTransport(),
