@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -20,7 +19,6 @@ import (
 var (
 	host                            string
 	bind                            string
-	port                            int
 	token                           string
 	tools                           string
 	scopes                          string
@@ -30,7 +28,6 @@ var (
 	maxInlineAttachmentBytes        int
 	maxInlineAttachmentBytesFlagSet bool
 	osExit                          = os.Exit
-	healthcheckClient               = http.DefaultClient
 )
 
 func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, readFile func(string) ([]byte, error), stderr io.Writer) {
@@ -41,8 +38,8 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 	fs.StringVar(&flagPkg.GiteaUnixSocket, "gitea-unix-socket", getenv("GITEA_UNIX_SOCKET"), "")
 	fs.StringVar(&bind, "b", "", "")
 	fs.StringVar(&bind, "bind", "", "")
-	fs.IntVar(&port, "p", 8080, "")
-	fs.IntVar(&port, "port", 8080, "")
+	fs.IntVar(&flagPkg.Port, "p", 8080, "")
+	fs.IntVar(&flagPkg.Port, "port", 8080, "")
 	fs.StringVar(&token, "T", "", "")
 	fs.StringVar(&token, "token", "", "")
 	fs.BoolVar(&flagPkg.ReadOnly, "r", false, "")
@@ -93,7 +90,7 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 		fmt.Fprintf(w, "  -oauth-public-url <url>\tPublic origin of this server, required with -oauth\n")
 		fmt.Fprintf(w, "  -max-inline-attachment-bytes <bytes>\tInline image attachments up to this size (default: 5242880)\n")
 		fmt.Fprintf(w, "  -v, -version\tPrint version and exit\n")
-		fmt.Fprintf(w, "  -healthcheck\tCheck a running HTTP server's /healthz endpoint and exit\n")
+		fmt.Fprintf(w, "  -healthcheck\tCheck server health and exit\n")
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "Environment variables:")
 		fmt.Fprintf(w, "  GITEA_ACCESS_TOKEN\tProvide access token\n")
@@ -103,6 +100,7 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 		fmt.Fprintf(w, "  GITEA_UNIX_SOCKET\tConnect to Gitea through a Unix socket\n")
 		fmt.Fprintf(w, "  GITEA_INSECURE\tSet to 'true' to ignore TLS errors\n")
 		fmt.Fprintf(w, "  GITEA_MAX_INLINE_ATTACHMENT_BYTES\tOverride inline image attachment size limit in bytes\n")
+		fmt.Fprintf(w, "  GITEA_MCP_HEALTHCHECK_FILE\tFile where the server records its mode and address for -healthcheck\n")
 		fmt.Fprintf(w, "  GITEA_MCP_OAUTH\tSet to 'true' to enable OAuth\n")
 		fmt.Fprintf(w, "  GITEA_MCP_PUBLIC_URL\tPublic origin of this server\n")
 		fmt.Fprintf(w, "  GITEA_READONLY\tSet to 'true' for read-only mode\n")
@@ -113,6 +111,11 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 	}
 
 	_ = fs.Parse(args)
+
+	flagPkg.HealthcheckFile = getenv("GITEA_MCP_HEALTHCHECK_FILE")
+	if healthcheck {
+		return
+	}
 
 	switch {
 	case host != "":
@@ -130,7 +133,6 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 	}
 
 	flagPkg.Bind = bind
-	flagPkg.Port = port
 	flagPkg.MaxInlineAttachmentBytes = maxInlineAttachmentBytes
 
 	flagPkg.Token = token
@@ -243,7 +245,7 @@ func Execute() {
 		return
 	}
 	if healthcheck {
-		if runHealthcheck(healthcheckClient, flagPkg.Port, os.Stdout, os.Stderr) {
+		if runHealthcheck(flagPkg.HealthcheckFile, flagPkg.Port, os.Stdout, os.Stderr) {
 			osExit(0)
 		} else {
 			osExit(1)

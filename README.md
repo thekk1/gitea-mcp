@@ -26,7 +26,7 @@ The server supports MCP up to `2026-07-28` and negotiates down to the client's v
 
 HTTP is always stateless: `/mcp` accepts POST only, without `Mcp-Session-Id`, standalone SSE or `Last-Event-ID` resumability. Origins are validated, and reverse proxies must forward `Mcp-Protocol-Version`, `Mcp-Method` and `Mcp-Name` unchanged. `Authorization: Bearer <token>` and `Authorization: token <token>` pass a Gitea credential per request, which is credential passthrough rather than MCP OAuth. Credentials Gitea rejects get a `401`, so clients can refresh them.
 
-HTTP mode also serves `/healthz`, which returns `200 OK` when the server is up. The Docker image's built-in `HEALTHCHECK` runs `gitea-mcp -healthcheck`, which dials `http://127.0.0.1:<port>/healthz` using the same `-p`/`-port` value (or `8080` by default) and exits `0` on success or `1` on failure. Stdio deployments do not serve `/healthz`, so override or disable the image's `HEALTHCHECK` when running in stdio mode.
+HTTP mode serves `/healthz` for health probes, e.g. a Kubernetes `httpGet` probe. The Docker image has a built-in health check that works in both modes, on a read-only root filesystem it needs a tmpfs mounted at `/tmp`.
 
 ### OAuth for remote clients
 

@@ -21,7 +21,7 @@ func TestNewHTTPServerOAuth(t *testing.T) {
 	origOAuth, origURL, origHost := flag.OAuth, flag.OAuthPublicURL, flag.Host
 	t.Cleanup(func() { flag.OAuth, flag.OAuthPublicURL, flag.Host = origOAuth, origURL, origHost })
 	flag.OAuth, flag.OAuthPublicURL, flag.Host = true, "https://mcp.example.com", giteaServer.URL
-	handler := newHTTPServer("", newMCPServer("test")).Handler
+	handler := newHTTPServer(newMCPServer("test")).Handler
 
 	// Only the flag wiring is checked here, pkg/oauth pins the document itself.
 	t.Run("serves discovery metadata", func(t *testing.T) {
@@ -74,7 +74,7 @@ func TestNewHTTPServerOAuth(t *testing.T) {
 
 	t.Run("stays off without the flag", func(t *testing.T) {
 		flag.OAuth = false
-		handler := newHTTPServer("", newMCPServer("test")).Handler
+		handler := newHTTPServer(newMCPServer("test")).Handler
 
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, metadataPath, nil))
@@ -99,10 +99,7 @@ func TestNewHTTPServerOAuth(t *testing.T) {
 }
 
 func TestNewHTTPServerConfig(t *testing.T) {
-	server := newHTTPServer(":12345", newMCPServer("test"))
-	if server.Addr != ":12345" {
-		t.Errorf("Addr = %q, want %q", server.Addr, ":12345")
-	}
+	server := newHTTPServer(newMCPServer("test"))
 	if server.Handler == nil {
 		t.Error("Handler is nil")
 	}
@@ -115,7 +112,7 @@ func TestNewHTTPServerConfig(t *testing.T) {
 }
 
 func TestHealthzEndpoint(t *testing.T) {
-	server := newHTTPServer(":0", newMCPServer("test"))
+	server := newHTTPServer(newMCPServer("test"))
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()

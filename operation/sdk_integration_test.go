@@ -68,7 +68,7 @@ func stdioCommandEnvironment() []string {
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		case "GITEA_READONLY", "GITEA_SCOPES", "GITEA_TOOLS", "GITEA_UNIX_SOCKET", "MCP_MODE":
+		case "GITEA_MCP_HEALTHCHECK_FILE", "GITEA_READONLY", "GITEA_SCOPES", "GITEA_TOOLS", "GITEA_UNIX_SOCKET", "MCP_MODE":
 			continue
 		}
 		filtered = append(filtered, entry)
@@ -295,7 +295,7 @@ func TestStreamableHTTP(t *testing.T) {
 
 	server := newMCPServer(testServerVersion)
 	RegisterTool(server)
-	httpTestServer := httptest.NewServer(newHTTPServer("", server).Handler)
+	httpTestServer := httptest.NewServer(newHTTPServer(server).Handler)
 	defer httpTestServer.Close()
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "gitea-mcp-http-test", Version: "1"}, nil)
@@ -370,7 +370,7 @@ func TestStreamableHTTP20260728Wire(t *testing.T) {
 			return projectTo.ErrorResult(errors.New("controlled execution failure"))
 		},
 	}.MCPHandler())
-	httpTestServer := httptest.NewServer(newHTTPServer("", server).Handler)
+	httpTestServer := httptest.NewServer(newHTTPServer(server).Handler)
 	defer httpTestServer.Close()
 
 	callParams := map[string]any{
@@ -521,7 +521,7 @@ func TestStreamableHTTPLegacyCore(t *testing.T) {
 	exposeAllTools(t)
 	server := newMCPServer(testServerVersion)
 	RegisterTool(server)
-	httpTestServer := httptest.NewServer(newHTTPServer("", server).Handler)
+	httpTestServer := httptest.NewServer(newHTTPServer(server).Handler)
 	defer httpTestServer.Close()
 
 	for _, protocolVersion := range []string{"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"} {
@@ -610,7 +610,7 @@ func TestStreamableHTTPRequestBodyLimit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	server := newMCPServer(testServerVersion)
-	httpTestServer := httptest.NewServer(newHTTPServer("", server).Handler)
+	httpTestServer := httptest.NewServer(newHTTPServer(server).Handler)
 	defer httpTestServer.Close()
 
 	for _, test := range []struct {
@@ -644,7 +644,7 @@ func TestStreamableHTTPRequestBodyLimit(t *testing.T) {
 func TestStreamableHTTPOriginProtection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	httpTestServer := httptest.NewServer(newHTTPServer("", newMCPServer(testServerVersion)).Handler)
+	httpTestServer := httptest.NewServer(newHTTPServer(newMCPServer(testServerVersion)).Handler)
 	defer httpTestServer.Close()
 
 	for _, test := range []struct {
@@ -701,7 +701,7 @@ func TestStreamableHTTPCancellation(t *testing.T) {
 			return nil, ctx.Err()
 		},
 	)
-	httpTestServer := httptest.NewServer(newHTTPServer("", server).Handler)
+	httpTestServer := httptest.NewServer(newHTTPServer(server).Handler)
 	defer httpTestServer.Close()
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "gitea-mcp-cancellation-test", Version: "1"}, nil)
@@ -799,7 +799,7 @@ func TestHTTPAuthPerRequest(t *testing.T) {
 			}, nil
 		},
 	)
-	httpTestServer := httptest.NewServer(newHTTPServer("", server).Handler)
+	httpTestServer := httptest.NewServer(newHTTPServer(server).Handler)
 	defer httpTestServer.Close()
 
 	baseTransport := httpTestServer.Client().Transport

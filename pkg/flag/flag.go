@@ -9,6 +9,7 @@ var (
 	Mode    string
 
 	GiteaUnixSocket string
+	HealthcheckFile string
 
 	MaxInlineAttachmentBytes int
 

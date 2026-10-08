@@ -5,77 +5,50 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestRunHealthcheck(t *testing.T) {
-	tests := []struct {
-		name       string
-		handler    http.HandlerFunc
-		port       func(server *httptest.Server) int
-		wantOK     bool
-		wantStdout string
+	okServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer okServer.Close()
+	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer errorServer.Close()
+
+	for _, test := range []struct {
+		name   string
+		state  string
+		port   int
+		wantOK bool
 	}{
-		{
-			name: "server responds 200 OK",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-			},
-			port:       serverPort,
-			wantOK:     true,
-			wantStdout: "healthy",
-		},
-		{
-			name: "server responds with an error status",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusInternalServerError)
-			},
-			port:   serverPort,
-			wantOK: false,
-		},
-		{
-			name:   "nothing listening on the port",
-			port:   func(*httptest.Server) int { return 1 },
-			wantOK: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var server *httptest.Server
-			if tt.handler != nil {
-				server = httptest.NewServer(tt.handler)
-				defer server.Close()
+		{name: "missing state file falls back to -port", port: okServer.Listener.Addr().(*net.TCPAddr).Port, wantOK: true},
+		{name: "state file address takes precedence over -port", state: okServer.Listener.Addr().String(), port: 1, wantOK: true},
+		{name: "stdio state file is healthy without a listener", state: "stdio", port: 1, wantOK: true},
+		{name: "error status fails", state: errorServer.Listener.Addr().String()},
+		{name: "nothing listening fails", port: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stateFile := filepath.Join(t.TempDir(), "state")
+			if test.state != "" {
+				if err := os.WriteFile(stateFile, []byte(test.state), 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			var stdout, stderr bytes.Buffer
-			ok := runHealthcheck(http.DefaultClient, tt.port(server), &stdout, &stderr)
-
-			if ok != tt.wantOK {
-				t.Errorf("runHealthcheck() = %v, want %v", ok, tt.wantOK)
+			if ok := runHealthcheck(stateFile, test.port, &stdout, &stderr); ok != test.wantOK {
+				t.Fatalf("runHealthcheck() = %v, want %v, stderr %q", ok, test.wantOK, stderr.String())
 			}
-			if tt.wantStdout != "" && !strings.Contains(stdout.String(), tt.wantStdout) {
-				t.Errorf("stdout = %q, want it to contain %q", stdout.String(), tt.wantStdout)
+			if test.wantOK && (!strings.Contains(stdout.String(), "healthy") || stderr.Len() != 0) {
+				t.Errorf("stdout = %q, stderr = %q, want healthy and no error", stdout.String(), stderr.String())
 			}
-			if tt.wantOK && stderr.Len() != 0 {
-				t.Errorf("stderr = %q, want empty on success", stderr.String())
-			}
-			if !tt.wantOK && stderr.Len() == 0 {
+			if !test.wantOK && stderr.Len() == 0 {
 				t.Error("stderr is empty, want a failure message")
 			}
 		})
 	}
-}
-
-func serverPort(server *httptest.Server) int {
-	_, portStr, err := net.SplitHostPort(server.Listener.Addr().String())
-	if err != nil {
-		panic(err)
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		panic(err)
-	}
-	return port
 }

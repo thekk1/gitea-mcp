@@ -95,7 +95,7 @@ func protectMCPOrigin(next http.Handler) http.Handler {
 	})
 }
 
-func newHTTPServer(addr string, s *mcp.Server) *http.Server {
+func newHTTPServer(s *mcp.Server) *http.Server {
 	mux := http.NewServeMux()
 	var handler http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return s },
@@ -121,7 +121,6 @@ func newHTTPServer(addr string, s *mcp.Server) *http.Server {
 	mux.Handle(mcpPath, protectMCPOrigin(provider.Protect(handler, gitea.TokenRejected)))
 	mux.HandleFunc("/healthz", handleHealthz)
 	return &http.Server{
-		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: httpReadHeaderTimeout,
 	}
@@ -138,12 +137,18 @@ func Run() error {
 	RegisterTool(mcpServer)
 	switch flag.Mode {
 	case "stdio":
+		writeHealthcheckFile("stdio")
 		if err := mcpServer.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 			return err
 		}
 	case "http":
 		addr := net.JoinHostPort(flag.Bind, strconv.Itoa(flag.Port))
-		httpServer := newHTTPServer(addr, mcpServer)
+		httpServer := newHTTPServer(mcpServer)
+		listener, err := net.Listen("tcp", addr)
+		if err != nil {
+			return err
+		}
+		writeHealthcheckFile(listener.Addr().String()) // Go dials a wildcard address as local
 		log.Infof("Gitea MCP HTTP server listening on %s (stateless, protocol up to 2026-07-28)", addr)
 		if flag.OAuth {
 			log.Infof("OAuth enabled, clients authorize against %s and connect to %s%s", flag.Host, flag.OAuthPublicURL, mcpPath)
@@ -165,7 +170,7 @@ func Run() error {
 			close(shutdownDone)
 		}()
 
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		<-shutdownDone // Wait for shutdown to finish
@@ -173,6 +178,16 @@ func Run() error {
 		return fmt.Errorf("invalid transport type: %s. Must be 'stdio' or 'http'", flag.Mode)
 	}
 	return nil
+}
+
+func writeHealthcheckFile(content string) {
+	if flag.HealthcheckFile == "" {
+		return
+	}
+	if err := os.WriteFile(flag.HealthcheckFile, []byte(content), 0o600); err != nil {
+		_ = os.Remove(flag.HealthcheckFile) // a stale or truncated file would mislead -healthcheck
+		log.Warnf("Failed to write healthcheck file, -healthcheck falls back to its own -port: %v", err)
+	}
 }
 
 func newMCPServer(version string) *mcp.Server {

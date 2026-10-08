@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"maps"
+	"os"
 	"slices"
 	"testing"
 
@@ -154,12 +155,21 @@ func TestInitFlagSetScopes(t *testing.T) {
 	}
 }
 
-func TestInitFlagSetHealthcheck(t *testing.T) {
-	t.Cleanup(func() { healthcheck = false })
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	initFlagSet(fs, []string{"-healthcheck"}, func(string) string { return "" }, func(string) ([]byte, error) { return nil, nil }, &bytes.Buffer{})
-	if !healthcheck {
-		t.Error("healthcheck = false, want true")
+func TestInitFlagSetHealthcheckSkipsServerValidation(t *testing.T) {
+	origExit := osExit
+	t.Cleanup(func() {
+		osExit = origExit
+		healthcheck, flagPkg.Port, flagPkg.HealthcheckFile = false, 0, ""
+	})
+	osExit = func(int) { t.Error("osExit called, want the probe to skip server validation") }
+	env := map[string]string{
+		"GITEA_MCP_HEALTHCHECK_FILE": "/tmp/state",
+		"GITEA_MCP_OAUTH":            "true",
+		"GITEA_ACCESS_TOKEN_FILE":    "/nonexistent",
+	}
+	initFlagSet(flag.NewFlagSet("test", flag.ContinueOnError), []string{"-healthcheck", "-p", "9000"}, func(key string) string { return env[key] }, os.ReadFile, &bytes.Buffer{})
+	if !healthcheck || flagPkg.Port != 9000 || flagPkg.HealthcheckFile != "/tmp/state" {
+		t.Errorf("healthcheck, Port, HealthcheckFile = %v, %d, %q, want true, 9000, /tmp/state", healthcheck, flagPkg.Port, flagPkg.HealthcheckFile)
 	}
 }
 
