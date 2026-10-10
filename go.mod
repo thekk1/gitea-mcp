@@ -2,7 +2,7 @@ module gitea.com/gitea/gitea-mcp
 
 go 1.27
 
-toolchain go1.27.1
+toolchain go1.27.2
 
 require (
 	gitea.dev/sdk v1.2.0
