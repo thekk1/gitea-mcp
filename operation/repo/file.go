@@ -131,6 +131,16 @@ type ContentLine struct {
 	Content    string `json:"content"`
 }
 
+type getFileContentArgs struct {
+	Owner     string `json:"owner" required:"true"`
+	Repo      string `json:"repo" required:"true"`
+	Ref       string `json:"ref"`
+	Path      string `json:"path" required:"true"`
+	WithLines bool   `json:"withLines"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+}
+
 type lineSelection struct {
 	Bytes              []byte
 	First, Last, Total int
@@ -177,33 +187,21 @@ func selectLines(raw []byte, start, end int) (lineSelection, error) {
 }
 
 func GetFileContentFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	ref, _ := args["ref"].(string)
-	filePath, err := params.GetString(args, "path")
-	if err != nil {
+	var in getFileContentArgs
+	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	content, _, err := client.Repositories.GetContents(ctx, owner, repo, ref, filePath)
+	content, _, err := client.Repositories.GetContents(ctx, in.Owner, in.Repo, in.Ref, in.Path)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get file err: %v", err))
 	}
 
-	withLines, _ := args["withLines"].(bool)
-	startLine := int(params.GetOptionalInt(args, "start_line", 0))
-	endLine := int(params.GetOptionalInt(args, "end_line", 0))
-	rangeRequested := startLine > 0 || endLine > 0
-	if !withLines && !rangeRequested {
+	rangeRequested := in.StartLine > 0 || in.EndLine > 0
+	if !in.WithLines && !rangeRequested {
 		return to.TextResult(slimContents(content))
 	}
 
@@ -211,7 +209,7 @@ func GetFileContentFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	selection, err := selectLines(raw, startLine, endLine)
+	selection, err := selectLines(raw, in.StartLine, in.EndLine)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -220,7 +218,7 @@ func GetFileContentFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	if !utf8.Valid(selection.Bytes) {
 		text, encoding = base64.StdEncoding.EncodeToString(selection.Bytes), "base64"
 	}
-	if withLines && encoding == "utf-8" {
+	if in.WithLines && encoding == "utf-8" {
 		contentLines := make([]ContentLine, 0, selection.Last-selection.First+1)
 		if selection.Total > 0 {
 			for line := range strings.SplitSeq(text, "\n") {
@@ -257,52 +255,46 @@ func decodeContent(content *gitea_sdk.ContentsResponse) ([]byte, error) {
 	return raw, nil
 }
 
+type getDirContentArgs struct {
+	Owner string `json:"owner" required:"true"`
+	Repo  string `json:"repo" required:"true"`
+	Ref   string `json:"ref"`
+	Path  string `json:"path" required:"true"`
+}
+
 func GetDirContentFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	ref, _ := args["ref"].(string)
-	filePath, err := params.GetString(args, "path")
-	if err != nil {
+	var in getDirContentArgs
+	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	content, _, err := client.Repositories.ListContents(ctx, owner, repo, ref, filePath)
+	content, _, err := client.Repositories.ListContents(ctx, in.Owner, in.Repo, in.Ref, in.Path)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get dir content err: %v", err))
 	}
 	return to.TextResult(slimDirEntries(content))
 }
 
-func CreateOrUpdateFileFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	message, err := params.GetString(args, "message")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	branchName, err := params.GetString(args, "branch_name")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	newBranchName, _ := args["new_branch_name"].(string)
+type createOrUpdateFileArgs struct {
+	Owner         string `json:"owner" required:"true"`
+	Repo          string `json:"repo" required:"true"`
+	Path          string `json:"path"`
+	Message       string `json:"message" required:"true"`
+	BranchName    string `json:"branch_name" required:"true"`
+	NewBranchName string `json:"new_branch_name"`
+	Files         []any  `json:"files"`
+}
 
-	files, _ := args["files"].([]any)
-	if params.GetOptionalString(args, "path", "") != "" {
+func CreateOrUpdateFileFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	var in createOrUpdateFileArgs
+	if err := params.Bind(args, &in); err != nil {
+		return to.ErrorResult(err)
+	}
+	files := in.Files
+	if in.Path != "" {
 		files = append([]any{args}, files...)
 	}
 	if len(files) == 0 {
@@ -317,7 +309,7 @@ func CreateOrUpdateFileFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	touched := make(map[string]bool, len(files))
 	for _, file := range files {
 		fileArgs, _ := file.(map[string]any)
-		operation, err := changeFileOperation(ctx, client, owner, repo, branchName, fileArgs)
+		operation, err := changeFileOperation(ctx, client, in.Owner, in.Repo, in.BranchName, fileArgs)
 		if err != nil {
 			return to.ErrorResult(err)
 		}
@@ -330,16 +322,16 @@ func CreateOrUpdateFileFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 		operations = append(operations, operation)
 	}
 
-	_, _, err = client.Repositories.ChangeFiles(ctx, owner, repo, gitea_sdk.ChangeFilesOptions{
+	_, _, err = client.Repositories.ChangeFiles(ctx, in.Owner, in.Repo, gitea_sdk.ChangeFilesOptions{
 		Files:     operations,
-		Message:   message,
-		Branch:    branchName,
-		NewBranch: newBranchName,
+		Message:   in.Message,
+		Branch:    in.BranchName,
+		NewBranch: in.NewBranchName,
 	})
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("change files err: %v", err))
 	}
-	return to.TextResult(fmt.Sprintf("Committed %d file(s) to branch %s", len(operations), cmp.Or(newBranchName, branchName)))
+	return to.TextResult(fmt.Sprintf("Committed %d file(s) to branch %s", len(operations), cmp.Or(in.NewBranchName, in.BranchName)))
 }
 
 func changeFileOperation(ctx context.Context, client *gitea_sdk.Client, owner, repo, ref string, file map[string]any) (*gitea_sdk.ChangeFileOperation, error) {
@@ -417,41 +409,30 @@ func applyEdits(text string, edits []any) (string, error) {
 	return text, nil
 }
 
+type deleteFileArgs struct {
+	Owner      string `json:"owner" required:"true"`
+	Repo       string `json:"repo" required:"true"`
+	Path       string `json:"path" required:"true"`
+	Message    string `json:"message" required:"true"`
+	BranchName string `json:"branch_name" required:"true"`
+	SHA        string `json:"sha" required:"true"`
+}
+
 func DeleteFileFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	filePath, err := params.GetString(args, "path")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	message, err := params.GetString(args, "message")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	branchName, err := params.GetString(args, "branch_name")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	sha, err := params.GetString(args, "sha")
-	if err != nil {
+	var in deleteFileArgs
+	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
 	opt := gitea_sdk.DeleteFileOptions{
-		Message:    message,
-		BranchName: branchName,
-		SHA:        sha,
+		Message:    in.Message,
+		BranchName: in.BranchName,
+		SHA:        in.SHA,
 	}
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	_, err = client.Repositories.DeleteFile(ctx, owner, repo, filePath, opt)
+	_, err = client.Repositories.DeleteFile(ctx, in.Owner, in.Repo, in.Path, opt)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("delete file err: %v", err))
 	}

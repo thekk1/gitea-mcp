@@ -37,33 +37,31 @@ func init() {
 	})
 }
 
+type getRepoTreeArgs struct {
+	Owner     string `json:"owner" required:"true"`
+	Repo      string `json:"repo" required:"true"`
+	TreeSHA   string `json:"tree_sha" required:"true"`
+	Recursive bool   `json:"recursive"`
+}
+
 func GetRepoTreeFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
+	var in getRepoTreeArgs
+	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
-	repo, err := params.GetString(args, "repo")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	treeSHA, err := params.GetString(args, "tree_sha")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	recursive, _ := args["recursive"].(bool)
 	page, pageSize := params.GetPagination(args, 30)
 
 	opt := gitea_sdk.ListTreeOptions{
 		Page:      page,
 		PageSize:  pageSize,
-		Ref:       treeSHA,
-		Recursive: recursive,
+		Ref:       in.TreeSHA,
+		Recursive: in.Recursive,
 	}
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	tree, _, err := client.Git.GetTrees(ctx, owner, repo, opt)
+	tree, _, err := client.Git.GetTrees(ctx, in.Owner, in.Repo, opt)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get repository tree err: %v", err))
 	}

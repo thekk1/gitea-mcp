@@ -85,28 +85,26 @@ func init() {
 	})
 }
 
+type createBranchArgs struct {
+	Owner     string `json:"owner" required:"true"`
+	Repo      string `json:"repo" required:"true"`
+	Branch    string `json:"branch" required:"true"`
+	OldBranch string `json:"old_branch"`
+}
+
 func CreateBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
+	var in createBranchArgs
+	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
-	repo, err := params.GetString(args, "repo")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	branch, err := params.GetString(args, "branch")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	oldBranch, _ := args["old_branch"].(string)
 
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	_, _, err = client.Repositories.CreateBranch(ctx, owner, repo, gitea_sdk.CreateBranchOption{
-		BranchName:    branch,
-		OldBranchName: oldBranch,
+	_, _, err = client.Repositories.CreateBranch(ctx, in.Owner, in.Repo, gitea_sdk.CreateBranchOption{
+		BranchName:    in.Branch,
+		OldBranchName: in.OldBranch,
 	})
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("create branch error: %v", err))
@@ -115,24 +113,22 @@ func CreateBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResu
 	return to.TextResult("Branch Created")
 }
 
+type deleteBranchArgs struct {
+	Owner  string `json:"owner" required:"true"`
+	Repo   string `json:"repo" required:"true"`
+	Branch string `json:"branch" required:"true"`
+}
+
 func DeleteBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	branch, err := params.GetString(args, "branch")
-	if err != nil {
+	var in deleteBranchArgs
+	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	_, _, err = client.Repositories.DeleteRepoBranch(ctx, owner, repo, branch)
+	_, _, err = client.Repositories.DeleteRepoBranch(ctx, in.Owner, in.Repo, in.Branch)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("delete branch error: %v", err))
 	}
@@ -140,13 +136,14 @@ func DeleteBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResu
 	return to.TextResult("Branch Deleted")
 }
 
+type listBranchesArgs struct {
+	Owner string `json:"owner" required:"true"`
+	Repo  string `json:"repo" required:"true"`
+}
+
 func ListBranchesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
-	if err != nil {
+	var in listBranchesArgs
+	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
 	page, pageSize := params.GetPagination(args, 30)
@@ -158,7 +155,7 @@ func ListBranchesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResu
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	branches, _, err := client.Repositories.ListRepoBranches(ctx, owner, repo, opt)
+	branches, _, err := client.Repositories.ListRepoBranches(ctx, in.Owner, in.Repo, opt)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("list branches error: %v", err))
 	}
