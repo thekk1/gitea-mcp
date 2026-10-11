@@ -156,6 +156,7 @@ Cursor 等客戶端可使用 stdio 命令：
 | get_gitea_mcp_server_version | version      | 讀取 | 取得 Gitea MCP 伺服器版本 |
 | get_me                       | user         | 讀取 | 取得目前已認證用戶 |
 | get_user_orgs                | user         | 讀取 | 列出目前用戶的組織 |
+| create_organization          | user         | 寫入 | 創建新組織 |
 | search_users                 | search       | 讀取 | 搜尋用戶 |
 | search_org_teams             | search       | 讀取 | 搜尋組織中的團隊 |
 | search_repos                 | search       | 讀取 | 搜尋倉庫 |
