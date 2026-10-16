@@ -1,12 +1,15 @@
 package gitea
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 
 	mcpContext "gitea.com/gitea/gitea-mcp/pkg/context"
@@ -18,14 +21,50 @@ import (
 var (
 	clientCache     sync.Map // token -> *gitea.Client
 	sharedTransOnce sync.Once
-	sharedTrans     *http.Transport
+	sharedTrans     http.RoundTripper
 )
 
-func sharedTransport() *http.Transport {
+func sharedTransport() http.RoundTripper {
 	sharedTransOnce.Do(func() {
-		sharedTrans = newHTTPTransport(flag.Insecure, flag.GiteaUnixSocket)
+		sharedTrans = &extraHeaderTransport{base: newHTTPTransport(flag.Insecure, flag.GiteaUnixSocket)}
 	})
 	return sharedTrans
+}
+
+type extraHeaderTransport struct { // the SDK has no per-request header hook
+	base http.RoundTripper
+}
+
+func (t *extraHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if len(flag.ExtraHeaders) == 0 || !isGiteaOrigin(req.URL) { // redirects re-enter here and must not carry them elsewhere
+		return t.base.RoundTrip(req)
+	}
+	req = req.Clone(req.Context())
+	for name, value := range flag.ExtraHeaders {
+		if !hasHeader(req.Header, name) {
+			req.Header.Set(name, value)
+		}
+	}
+	return t.base.RoundTrip(req)
+}
+
+func hasHeader(header http.Header, name string) bool { // the SDK sets non-canonical keys like "content-type"
+	for key := range header {
+		if strings.EqualFold(key, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func isGiteaOrigin(reqURL *url.URL) bool {
+	giteaURL, err := url.Parse(flag.Host)
+	return err == nil && reqURL.Scheme == giteaURL.Scheme && reqURL.Hostname() == giteaURL.Hostname() &&
+		portOrDefault(reqURL) == portOrDefault(giteaURL)
+}
+
+func portOrDefault(target *url.URL) string {
+	return cmp.Or(target.Port(), map[string]string{"http": "80", "https": "443"}[target.Scheme])
 }
 
 func newHTTPTransport(insecure bool, unixSocket string) *http.Transport {

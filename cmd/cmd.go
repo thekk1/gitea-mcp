@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -96,6 +97,7 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 		fmt.Fprintf(w, "  GITEA_ACCESS_TOKEN\tProvide access token\n")
 		fmt.Fprintf(w, "  GITEA_ACCESS_TOKEN_FILE\tPath to a file containing the access token (e.g. a Docker secret)\n")
 		fmt.Fprintf(w, "  GITEA_DEBUG\tSet to 'true' for debug mode\n")
+		fmt.Fprintf(w, "  GITEA_EXTRA_HEADERS\tJSON object of extra headers to send to Gitea\n")
 		fmt.Fprintf(w, "  GITEA_HOST\tOverride Gitea host URL\n")
 		fmt.Fprintf(w, "  GITEA_UNIX_SOCKET\tConnect to Gitea through a Unix socket\n")
 		fmt.Fprintf(w, "  GITEA_INSECURE\tSet to 'true' to ignore TLS errors\n")
@@ -215,6 +217,12 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 				osExit(1)
 			}
 			flagPkg.MaxInlineAttachmentBytes = parsed
+		}
+	}
+	if val := getenv("GITEA_EXTRA_HEADERS"); val != "" {
+		if err := json.Unmarshal([]byte(val), &flagPkg.ExtraHeaders); err != nil {
+			fmt.Fprintf(stderr, "invalid GITEA_EXTRA_HEADERS: %v\n", err)
+			osExit(1)
 		}
 	}
 }

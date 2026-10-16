@@ -21,4 +21,5 @@ var (
 	Debug         bool
 	AllowedTools  map[string]struct{}
 	AllowedScopes map[string]struct{}
+	ExtraHeaders  map[string]string
 )

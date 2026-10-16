@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	flagPkg "gitea.com/gitea/gitea-mcp/pkg/flag"
@@ -225,5 +226,26 @@ func TestInitFlagSetGiteaUnixSocket(t *testing.T) {
 				t.Errorf("Host, GiteaUnixSocket = %q, %q, want %q, %q", flagPkg.Host, flagPkg.GiteaUnixSocket, test.wantHost, test.wantSocket)
 			}
 		})
+	}
+}
+
+func TestInitFlagSetExtraHeaders(t *testing.T) {
+	origExit := osExit
+	t.Cleanup(func() { osExit, flagPkg.ExtraHeaders = origExit, nil })
+	var exitCode int
+	osExit = func(code int) { exitCode = code }
+	run := func(env string) string {
+		var stderr bytes.Buffer
+		getenv := func(key string) string { return map[string]string{"GITEA_EXTRA_HEADERS": env}[key] }
+		initFlagSet(flag.NewFlagSet("test", flag.ContinueOnError), nil, getenv, func(string) ([]byte, error) { return nil, nil }, &stderr)
+		return stderr.String()
+	}
+
+	run(`{"CF-Access-Client-Id":"id"}`)
+	if exitCode != 0 || flagPkg.ExtraHeaders["CF-Access-Client-Id"] != "id" {
+		t.Errorf("exitCode, ExtraHeaders = %d, %v, want 0 and the parsed header", exitCode, flagPkg.ExtraHeaders)
+	}
+	if stderr := run("not-json"); exitCode != 1 || !strings.Contains(stderr, "GITEA_EXTRA_HEADERS") {
+		t.Errorf("exitCode, stderr = %d, %q, want 1 and a GITEA_EXTRA_HEADERS diagnostic", exitCode, stderr)
 	}
 }
