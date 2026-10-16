@@ -14,6 +14,7 @@ import (
 
 	"gitea.com/gitea/gitea-mcp/operation"
 	flagPkg "gitea.com/gitea/gitea-mcp/pkg/flag"
+	"gitea.com/gitea/gitea-mcp/pkg/gitea"
 	"gitea.com/gitea/gitea-mcp/pkg/log"
 )
 
@@ -55,6 +56,9 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 	fs.BoolVar(&flagPkg.Debug, "debug", false, "")
 	fs.BoolVar(&flagPkg.Insecure, "k", false, "")
 	fs.BoolVar(&flagPkg.Insecure, "insecure", false, "")
+	fs.StringVar(&flagPkg.ClientCertFile, "client-cert", getenv("GITEA_CLIENT_CERT"), "")
+	fs.StringVar(&flagPkg.ClientKeyFile, "client-key", getenv("GITEA_CLIENT_KEY"), "")
+	fs.StringVar(&flagPkg.CACertFile, "ca-cert", getenv("GITEA_CA_CERT"), "")
 	fs.BoolVar(&flagPkg.OAuth, "oauth", false, "")
 	fs.StringVar(&oauthPublicURL, "oauth-public-url", "", "")
 	fs.BoolVar(&version, "v", false, "")
@@ -87,6 +91,9 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 		fmt.Fprintf(w, "  -S, -scope <names>\tComma-separated list of tool scopes to expose\n")
 		fmt.Fprintf(w, "  -d, -debug\tEnable debug mode\n")
 		fmt.Fprintf(w, "  -k, -insecure\tIgnore TLS certificate errors\n")
+		fmt.Fprintf(w, "  -client-cert <path>\tPEM client certificate to present to the Gitea host (mTLS)\n")
+		fmt.Fprintf(w, "  -client-key <path>\tPEM private key matching the client certificate\n")
+		fmt.Fprintf(w, "  -ca-cert <path>\tPEM CA bundle used to verify the Gitea host\n")
 		fmt.Fprintf(w, "  -oauth\tLet clients authorize against Gitea instead of using a static token (http only)\n")
 		fmt.Fprintf(w, "  -oauth-public-url <url>\tPublic origin of this server, required with -oauth\n")
 		fmt.Fprintf(w, "  -max-inline-attachment-bytes <bytes>\tInline image attachments up to this size (default: 5242880)\n")
@@ -101,6 +108,9 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 		fmt.Fprintf(w, "  GITEA_HOST\tOverride Gitea host URL\n")
 		fmt.Fprintf(w, "  GITEA_UNIX_SOCKET\tConnect to Gitea through a Unix socket\n")
 		fmt.Fprintf(w, "  GITEA_INSECURE\tSet to 'true' to ignore TLS errors\n")
+		fmt.Fprintf(w, "  GITEA_CLIENT_CERT\tPath to PEM client certificate for mTLS\n")
+		fmt.Fprintf(w, "  GITEA_CLIENT_KEY\tPath to PEM private key for the client certificate\n")
+		fmt.Fprintf(w, "  GITEA_CA_CERT\tPath to PEM CA bundle to verify the Gitea host\n")
 		fmt.Fprintf(w, "  GITEA_MAX_INLINE_ATTACHMENT_BYTES\tOverride inline image attachment size limit in bytes\n")
 		fmt.Fprintf(w, "  GITEA_MCP_HEALTHCHECK_FILE\tFile where the server records its mode and address for -healthcheck\n")
 		fmt.Fprintf(w, "  GITEA_MCP_OAUTH\tSet to 'true' to enable OAuth\n")
@@ -184,6 +194,9 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 	if getenv("GITEA_INSECURE") == "true" {
 		flagPkg.Insecure = true
 	}
+	if flagPkg.Insecure && flagPkg.CACertFile != "" {
+		fmt.Fprintf(stderr, "warning: -ca-cert has no effect with -insecure, server verification is disabled\n")
+	}
 	if getenv("GITEA_MCP_OAUTH") == "true" {
 		flagPkg.OAuth = true
 	}
@@ -198,6 +211,10 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 		}
 		if flagPkg.GiteaUnixSocket != "" {
 			fmt.Fprintf(stderr, "-oauth cannot be combined with -gitea-unix-socket\n")
+			osExit(1)
+		}
+		if flagPkg.ClientCertFile != "" {
+			fmt.Fprintf(stderr, "-oauth cannot be combined with -client-cert, Gitea may map the certificate to a user every caller would act as\n")
 			osExit(1)
 		}
 		if flagPkg.OAuthPublicURL == "" {
@@ -258,6 +275,11 @@ func Execute() {
 		} else {
 			osExit(1)
 		}
+		return
+	}
+	if _, err := gitea.InitTransport(); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid TLS configuration: %v\n", err)
+		osExit(1)
 		return
 	}
 	if err := operation.Run(); err != nil {

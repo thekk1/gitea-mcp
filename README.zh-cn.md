@@ -18,7 +18,7 @@ make install
 
 ## 配置
 
-Gitea 主机和访问令牌可通过命令行参数或环境变量提供，命令行参数优先。运行 `gitea-mcp --help` 可查看完整的参数与环境变量列表。日志写入 `$HOME/.gitea-mcp/gitea-mcp.log`，加上 `-d` 可启用调试日志。若 Gitea 监听 Unix socket，传入 `-gitea-unix-socket <path>`，主机将默认为 `http://unix/`。若需向 Gitea 发送额外请求头（例如用于 Cloudflare Access），将 `GITEA_EXTRA_HEADERS` 设置为 JSON 对象，如 `{"CF-Access-Client-Id":"id","CF-Access-Client-Secret":"secret"}`。
+Gitea 主机和访问令牌可通过命令行参数或环境变量提供，命令行参数优先。运行 `gitea-mcp --help` 可查看完整的参数与环境变量列表。日志写入 `$HOME/.gitea-mcp/gitea-mcp.log`，加上 `-d` 可启用调试日志。若 Gitea 监听 Unix socket，传入 `-gitea-unix-socket <path>`，主机将默认为 `http://unix/`。若需向 Gitea 发送额外请求头（例如用于 Cloudflare Access），将 `GITEA_EXTRA_HEADERS` 设置为 JSON 对象，如 `{"CF-Access-Client-Id":"id","CF-Access-Client-Secret":"secret"}`。若 Gitea 要求双向 TLS，通过 `-client-cert` 和 `-client-key` 传入 PEM 文件（不支持与 `-oauth` 同时使用），更新后的文件无需重启即可生效。`-ca-cert` 可将 PEM CA 证书包添加到系统根证书中，仅在启动时读取。
 
 ### MCP 协议与 HTTP 传输
 

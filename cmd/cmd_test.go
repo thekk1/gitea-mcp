@@ -59,12 +59,18 @@ func TestInitFlagSetOAuth(t *testing.T) {
 		{name: "public URL is required", args: []string{"-t", "http", "-oauth"}, wantExit: true},
 		{name: "public URL must not have a path", args: []string{"-t", "http", "-oauth", "-oauth-public-url", "https://mcp.example.com/base"}, wantExit: true},
 		{name: "stdio transport is rejected", args: []string{"-oauth", "-oauth-public-url", "https://mcp.example.com"}, wantExit: true},
+		{
+			name:     "client certificate is rejected",
+			args:     []string{"-t", "http", "-oauth", "-oauth-public-url", "https://mcp.example.com"},
+			env:      map[string]string{"GITEA_CLIENT_CERT": "client.crt"},
+			wantExit: true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			origExit := osExit
 			t.Cleanup(func() {
 				osExit = origExit
-				flagPkg.OAuth, flagPkg.OAuthPublicURL, flagPkg.Token = false, "", ""
+				flagPkg.OAuth, flagPkg.OAuthPublicURL, flagPkg.Token, flagPkg.ClientCertFile = false, "", "", ""
 			})
 			var exits int
 			osExit = func(int) { exits++ }
@@ -226,6 +232,22 @@ func TestInitFlagSetGiteaUnixSocket(t *testing.T) {
 				t.Errorf("Host, GiteaUnixSocket = %q, %q, want %q, %q", flagPkg.Host, flagPkg.GiteaUnixSocket, test.wantHost, test.wantSocket)
 			}
 		})
+	}
+}
+
+func TestInitFlagSetTLSFlagsOverrideEnvAndWarnWhenInsecure(t *testing.T) {
+	t.Cleanup(func() {
+		flagPkg.ClientCertFile, flagPkg.ClientKeyFile, flagPkg.CACertFile, flagPkg.Insecure = "", "", "", false
+	})
+	env := map[string]string{"GITEA_CLIENT_CERT": "env.crt", "GITEA_CLIENT_KEY": "env.key", "GITEA_CA_CERT": "env-ca.crt"}
+	var stderr bytes.Buffer
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	initFlagSet(fs, []string{"-client-cert", "flag.crt", "-insecure"}, func(key string) string { return env[key] }, func(string) ([]byte, error) { return nil, nil }, &stderr)
+	if flagPkg.ClientCertFile != "flag.crt" || flagPkg.ClientKeyFile != "env.key" || flagPkg.CACertFile != "env-ca.crt" {
+		t.Errorf("cert, key, CA = %q, %q, %q, want flag.crt, env.key, env-ca.crt", flagPkg.ClientCertFile, flagPkg.ClientKeyFile, flagPkg.CACertFile)
+	}
+	if !strings.Contains(stderr.String(), "-ca-cert has no effect with -insecure") {
+		t.Errorf("stderr = %q, want the -insecure warning", stderr.String())
 	}
 }
 

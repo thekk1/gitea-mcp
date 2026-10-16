@@ -4,11 +4,13 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 
@@ -18,17 +20,22 @@ import (
 	"gitea.dev/sdk"
 )
 
-var (
-	clientCache     sync.Map // token -> *gitea.Client
-	sharedTransOnce sync.Once
-	sharedTrans     http.RoundTripper
-)
+var clientCache sync.Map // token -> *gitea.Client
+
+var InitTransport = sync.OnceValues(func() (http.RoundTripper, error) { // called at startup so bad TLS files fail there, not on the first request
+	transport, err := newHTTPTransport(flag.Insecure, flag.GiteaUnixSocket, flag.ClientCertFile, flag.ClientKeyFile, flag.CACertFile)
+	if err != nil {
+		return nil, err
+	}
+	return &extraHeaderTransport{base: transport}, nil
+})
 
 func sharedTransport() http.RoundTripper {
-	sharedTransOnce.Do(func() {
-		sharedTrans = &extraHeaderTransport{base: newHTTPTransport(flag.Insecure, flag.GiteaUnixSocket)}
-	})
-	return sharedTrans
+	transport, err := InitTransport()
+	if err != nil {
+		panic(err) // unreachable, Execute exits when InitTransport fails
+	}
+	return transport
 }
 
 type extraHeaderTransport struct { // the SDK has no per-request header hook
@@ -67,10 +74,37 @@ func portOrDefault(target *url.URL) string {
 	return cmp.Or(target.Port(), map[string]string{"http": "80", "https": "443"}[target.Scheme])
 }
 
-func newHTTPTransport(insecure bool, unixSocket string) *http.Transport {
+func newHTTPTransport(insecure bool, unixSocket, clientCertFile, clientKeyFile, caCertFile string) (*http.Transport, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if insecure {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // user-requested insecure mode
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecure}
+	if (clientCertFile == "") != (clientKeyFile == "") {
+		return nil, errors.New("-client-cert and -client-key must be set together")
+	}
+	if clientCertFile != "" {
+		if _, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile); err != nil {
+			return nil, fmt.Errorf("load client certificate: %w", err)
+		}
+		transport.TLSClientConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			pair, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile) // per handshake, so renewed files apply
+			if err != nil || info.SupportsCertificate(&pair) != nil {
+				return &tls.Certificate{}, err
+			}
+			return &pair, nil
+		}
+	}
+	if caCertFile != "" {
+		caPEM, err := os.ReadFile(caCertFile)
+		if err != nil {
+			return nil, fmt.Errorf("read CA certificate: %w", err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, fmt.Errorf("load system cert pool: %w", err)
+		}
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("no certificates in %q", caCertFile)
+		}
+		transport.TLSClientConfig.RootCAs = pool
 	}
 	if unixSocket != "" {
 		transport.Proxy = nil
@@ -78,7 +112,7 @@ func newHTTPTransport(insecure bool, unixSocket string) *http.Transport {
 			return (&net.Dialer{}).DialContext(ctx, "unix", unixSocket)
 		}
 	}
-	return transport
+	return transport, nil
 }
 
 // NewClient returns a cached *gitea.Client keyed by host+token. The SDK's per-client

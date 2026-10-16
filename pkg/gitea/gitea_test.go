@@ -1,12 +1,23 @@
 package gitea
 
 import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"gitea.com/gitea/gitea-mcp/pkg/flag"
 )
@@ -28,7 +39,10 @@ func TestNewHTTPTransportPinsRequestsAndRedirectsToUnixSocket(t *testing.T) {
 	server.Start()
 	defer server.Close()
 
-	transport := newHTTPTransport(false, listener.Addr().String())
+	transport, err := newHTTPTransport(false, listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if transport.Proxy != nil {
 		t.Error("Proxy is set, want nil so proxy settings are ignored")
 	}
@@ -43,6 +57,74 @@ func TestNewHTTPTransportPinsRequestsAndRedirectsToUnixSocket(t *testing.T) {
 	}
 	if string(body) != "example.com/api/v1/version" {
 		t.Errorf("body = %q, want the redirect served over the socket", body)
+	}
+}
+
+func TestNewHTTPTransportTLS(t *testing.T) {
+	if transport, err := newHTTPTransport(true, "", "", "", ""); err != nil || !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Errorf("insecure: err = %v, want InsecureSkipVerify", err)
+	}
+
+	dir := t.TempDir()
+	certPath, keyPath := filepath.Join(dir, "client.crt"), filepath.Join(dir, "client.key")
+	writePair := func() []byte {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		template := &x509.Certificate{SerialNumber: big.NewInt(1), NotAfter: time.Now().Add(time.Hour)}
+		der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return der
+	}
+	caDER := writePair()
+
+	for name, files := range map[string][3]string{
+		"cert without key":  {certPath, "", ""},
+		"unloadable pair":   {keyPath, keyPath, ""},
+		"missing CA file":   {"", "", filepath.Join(dir, "missing.crt")},
+		"CA without a cert": {"", "", keyPath},
+	} {
+		if _, err := newHTTPTransport(false, "", files[0], files[1], files[2]); err == nil {
+			t.Errorf("%s: err = nil, want an error", name)
+		}
+	}
+
+	transport, err := newHTTPTransport(false, "", certPath, keyPath, certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ca.Verify(x509.VerifyOptions{Roots: transport.TLSClientConfig.RootCAs}); err != nil {
+		t.Errorf("CA not trusted: %v", err)
+	}
+	renewed := writePair()
+	info := &tls.CertificateRequestInfo{
+		Version:          tls.VersionTLS13,
+		SignatureSchemes: []tls.SignatureScheme{tls.ECDSAWithP256AndSHA256},
+		AcceptableCAs:    [][]byte{ca.RawIssuer},
+	}
+	if pair, err := transport.TLSClientConfig.GetClientCertificate(info); err != nil || len(pair.Certificate) == 0 || !bytes.Equal(pair.Certificate[0], renewed) {
+		t.Errorf("err = %v, want the renewed certificate", err)
+	}
+	info.AcceptableCAs = [][]byte{[]byte("another CA")}
+	if pair, err := transport.TLSClientConfig.GetClientCertificate(info); err != nil || len(pair.Certificate) != 0 {
+		t.Errorf("err = %v, want no certificate for a server accepting another CA", err)
 	}
 }
 

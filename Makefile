@@ -59,13 +59,8 @@ fmt: ## format the Go code
 	$(GO) run $(GOLANGCI_LINT_PACKAGE) fmt
 
 .PHONY: fmt-check
-fmt-check: fmt ## check that Go code is formatted
-	@diff=$$(git diff --color=always); \
-	if [ -n "$$diff" ]; then \
-		echo "Please run 'make fmt' and commit the result:"; \
-		printf "%s" "$${diff}"; \
-		exit 1; \
-	fi
+fmt-check: ## check that Go code is formatted
+	$(GO) run $(GOLANGCI_LINT_PACKAGE) fmt --diff-colored
 
 .PHONY: lint
 lint: lint-go ## lint everything

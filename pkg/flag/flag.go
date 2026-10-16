@@ -16,6 +16,10 @@ var (
 	OAuth          bool
 	OAuthPublicURL string // origin, no trailing slash
 
+	ClientCertFile string
+	ClientKeyFile  string
+	CACertFile     string
+
 	Insecure      bool
 	ReadOnly      bool
 	Debug         bool
