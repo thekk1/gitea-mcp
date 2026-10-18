@@ -186,7 +186,7 @@ Cursor 等客户端可使用 stdio 命令：
 | actions_config_read          | actions      | 读取 | 读取 Actions 密钥和变量 |
 | actions_config_write         | actions      | 写入 | 写入 Actions 密钥和变量：更新插入、创建、更新、删除 |
 | actions_run_read             | actions      | 读取 | 读取 Actions 工作流、运行、作业、日志和构件 |
-| actions_run_write            | actions      | 写入 | 写入 Actions 运行：触发、取消、重新运行 |
+| actions_run_write            | actions      | 写入 | 写入 Actions 运行：触发、取消、重新运行（整体或单个作业）、批准、启用/禁用工作流 |
 | create_repo                  | repository   | 写入 | 创建新仓库 |
 | fork_repo                    | repository   | 写入 | 复刻仓库 |
 | list_my_repos                | repository   | 读取 | 列出当前用户拥有的仓库 |

@@ -49,15 +49,16 @@ var (
 
 	ActionsRunWriteTool = tool.NewDefinition(
 		ActionsRunWriteToolName,
-		"Write Actions runs: dispatch, cancel, rerun.",
-		annotation.Write("Trigger, cancel, or rerun Actions workflows"),
-		tool.String("method", tool.Required(), tool.Enum("dispatch_workflow", "cancel_run", "rerun_run")),
+		"Write Actions runs: dispatch, cancel, rerun a run, one job or only its failed jobs, approve a run, enable or disable a workflow.",
+		annotation.Write("Trigger, cancel, rerun, or approve Actions workflows"),
+		tool.String("method", tool.Required(), tool.Enum("dispatch_workflow", "cancel_run", "rerun_run", "rerun_job", "rerun_failed_jobs", "approve_run", "enable_workflow", "disable_workflow")),
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("workflow_id", tool.Description("ID or filename (for 'dispatch_workflow')")),
+		tool.String("workflow_id", tool.Description("ID or filename (for 'dispatch_workflow'/'enable_workflow'/'disable_workflow')")),
 		tool.String("ref", tool.Description("branch or tag (for 'dispatch_workflow')")),
 		tool.Object("inputs", tool.Description("for 'dispatch_workflow'")),
-		tool.Number("run_id", tool.Description("for 'cancel_run'/'rerun_run'")),
+		tool.Number("run_id", tool.Description("required except for workflow methods")),
+		tool.Number("job_id", tool.Description("for 'rerun_job'")),
 	)
 )
 
@@ -115,6 +116,16 @@ func runWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, 
 		return cancelRepoActionRunFn(ctx, args)
 	case "rerun_run":
 		return rerunRepoActionRunFn(ctx, args)
+	case "rerun_job":
+		return rerunRepoActionJobFn(ctx, args)
+	case "rerun_failed_jobs":
+		return rerunRepoActionFailedJobsFn(ctx, args)
+	case "approve_run":
+		return approveRepoActionRunFn(ctx, args)
+	case "enable_workflow":
+		return setRepoActionWorkflowEnabledFn(ctx, args, true)
+	case "disable_workflow":
+		return setRepoActionWorkflowEnabledFn(ctx, args, false)
 	default:
 		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
 	}
@@ -355,6 +366,96 @@ func rerunRepoActionRunFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 		return to.ErrorResult(fmt.Errorf("rerun action run err: %v", err))
 	}
 	return to.TextResult(map[string]any{"message": "run rerun requested"})
+}
+
+// runArgs reads the owner, repo and run_id that every run write method needs.
+func runArgs(args map[string]any) (owner, repo string, runID int64, err error) {
+	if owner, err = params.GetString(args, "owner"); err != nil {
+		return "", "", 0, err
+	}
+	if repo, err = params.GetString(args, "repo"); err != nil {
+		return "", "", 0, err
+	}
+	if runID, err = params.GetIndex(args, "run_id"); err != nil || runID <= 0 {
+		return "", "", 0, errors.New("run_id is required")
+	}
+	return owner, repo, runID, nil
+}
+
+func rerunRepoActionJobFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, runID, err := runArgs(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	jobID, err := params.GetIndex(args, "job_id")
+	if err != nil || jobID <= 0 {
+		return to.ErrorResult(errors.New("job_id is required"))
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	if _, _, err := client.Actions.RerunRepoRunJob(ctx, owner, repo, runID, jobID); err != nil {
+		return to.ErrorResult(fmt.Errorf("rerun action job err: %v", err))
+	}
+	return to.TextResult(map[string]any{"message": "job rerun requested"})
+}
+
+func rerunRepoActionFailedJobsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, runID, err := runArgs(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	if _, err := client.Actions.RerunRepoRunFailedJobs(ctx, owner, repo, runID); err != nil {
+		return to.ErrorResult(fmt.Errorf("rerun failed action jobs err: %v", err))
+	}
+	return to.TextResult(map[string]any{"message": "failed jobs rerun requested"})
+}
+
+func approveRepoActionRunFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, runID, err := runArgs(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	if _, _, err := client.Actions.ApproveRepoRun(ctx, owner, repo, runID); err != nil {
+		return to.ErrorResult(fmt.Errorf("approve action run err: %v", err))
+	}
+	return to.TextResult(map[string]any{"message": "run approved"})
+}
+
+func setRepoActionWorkflowEnabledFn(ctx context.Context, args map[string]any, enable bool) (*mcp.CallToolResult, error) {
+	owner, err := params.GetString(args, "owner")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	repo, err := params.GetString(args, "repo")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	workflowID, err := params.GetString(args, "workflow_id")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	toggle, state := client.Actions.DisableRepoWorkflow, "disabled"
+	if enable {
+		toggle, state = client.Actions.EnableRepoWorkflow, "enabled"
+	}
+	if _, err := toggle(ctx, owner, repo, workflowID); err != nil {
+		return to.ErrorResult(fmt.Errorf("set action workflow %s err: %v", state, err))
+	}
+	return to.TextResult(map[string]any{"message": "workflow " + state})
 }
 
 func listRepoActionJobsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

@@ -186,7 +186,7 @@ Once configured, try `list all my repositories` in the chat box.
 | actions_config_read          | actions      | Read   | Read Actions secrets and variables |
 | actions_config_write         | actions      | Write  | Write Actions secrets and variables: upsert, create, update, delete |
 | actions_run_read             | actions      | Read   | Read Actions workflows, runs, jobs, logs, and artifacts |
-| actions_run_write            | actions      | Write  | Write Actions runs: dispatch, cancel, rerun |
+| actions_run_write            | actions      | Write  | Write Actions runs: dispatch, cancel, rerun runs or jobs, approve, enable/disable workflows |
 | create_repo                  | repository   | Write  | Create a new repository |
 | fork_repo                    | repository   | Write  | Fork a repository |
 | list_my_repos                | repository   | Read   | List repositories owned by the current user |
