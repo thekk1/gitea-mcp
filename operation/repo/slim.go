@@ -28,36 +28,6 @@ func slimBranches(branches []*gitea_sdk.Branch) []map[string]any {
 	return out
 }
 
-func slimCommit(c *gitea_sdk.Commit) map[string]any {
-	if c == nil {
-		return nil
-	}
-	m := map[string]any{
-		"sha":      c.SHA,
-		"html_url": c.HTMLURL,
-		"created":  c.Created,
-	}
-	if c.RepoCommit != nil {
-		m["message"] = c.RepoCommit.Message
-		if c.RepoCommit.Author != nil {
-			m["author"] = map[string]any{
-				"name":  c.RepoCommit.Author.Name,
-				"email": c.RepoCommit.Author.Email,
-				"date":  c.RepoCommit.Author.Date,
-			}
-		}
-	}
-	return m
-}
-
-func slimCommits(commits []*gitea_sdk.Commit) []map[string]any {
-	out := make([]map[string]any, 0, len(commits))
-	for _, c := range commits {
-		out = append(out, slimCommit(c))
-	}
-	return out
-}
-
 func slimTag(t *gitea_sdk.Tag) map[string]any {
 	if t == nil {
 		return nil
@@ -175,4 +145,55 @@ func slimDirEntries(entries []*gitea_sdk.ContentsResponse) []map[string]any {
 		})
 	}
 	return out
+}
+
+func slimStatus(s *gitea_sdk.Status) map[string]any {
+	if s == nil {
+		return nil
+	}
+	return map[string]any{
+		"context":     s.Context,
+		"state":       s.State,
+		"description": s.Description,
+		"target_url":  s.TargetURL,
+		"creator":     slim.UserLogin(s.Creator),
+		"updated_at":  s.Updated,
+	}
+}
+
+func slimCombinedStatus(s *gitea_sdk.CombinedStatus) map[string]any {
+	if s == nil {
+		return nil
+	}
+	statuses := make([]map[string]any, 0, len(s.Statuses))
+	for _, st := range s.Statuses {
+		statuses = append(statuses, slimStatus(st))
+	}
+	return map[string]any{
+		"state":       s.State,
+		"sha":         s.SHA,
+		"total_count": s.TotalCount,
+		"statuses":    statuses,
+	}
+}
+
+// changedFiles lists each file touched by commits once, in first-seen order.
+func changedFiles(commits []*gitea_sdk.Commit) []string {
+	seen := map[string]struct{}{}
+	files := []string{}
+	for _, c := range commits {
+		if c == nil {
+			continue
+		}
+		for _, f := range c.Files {
+			if f == nil {
+				continue
+			}
+			if _, ok := seen[f.Filename]; !ok {
+				seen[f.Filename] = struct{}{}
+				files = append(files, f.Filename)
+			}
+		}
+	}
+	return files
 }

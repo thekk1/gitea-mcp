@@ -205,7 +205,10 @@ Cursor 等客戶端可使用 stdio 命令：
 | get_tag                      | tag          | 讀取 | 取得標籤詳情 |
 | list_tags                    | tag          | 讀取 | 列出倉庫標籤 |
 | list_commits                 | commit       | 讀取 | 列出倉庫提交 |
-| get_commit                   | commit       | 讀取 | 取得提交詳情 |
+| get_commit                   | commit       | 讀取 | 取得提交詳情，可附帶差異 |
+| compare_commits              | commit       | 讀取 | 比較兩個引用：提交與變更檔案 |
+| get_commit_status            | commit       | 讀取 | 取得提交、分支或標籤的合併狀態 |
+| create_commit_status         | commit       | 寫入 | 為提交創建狀態 |
 | create_release               | release      | 寫入 | 創建版本發布 |
 | delete_release               | release      | 寫入 | 刪除版本發布 |
 | get_release                  | release      | 讀取 | 依 ID 取得版本發布 |

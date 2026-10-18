@@ -113,6 +113,36 @@ func Repos(repos []*gitea_sdk.Repository) []map[string]any {
 	return out
 }
 
+func Commit(c *gitea_sdk.Commit) map[string]any {
+	if c == nil {
+		return nil
+	}
+	m := map[string]any{
+		"sha":      c.SHA,
+		"html_url": c.HTMLURL,
+		"created":  c.Created,
+	}
+	if c.RepoCommit != nil {
+		m["message"] = c.RepoCommit.Message
+		if c.RepoCommit.Author != nil {
+			m["author"] = map[string]any{
+				"name":  c.RepoCommit.Author.Name,
+				"email": c.RepoCommit.Author.Email,
+				"date":  c.RepoCommit.Author.Date,
+			}
+		}
+	}
+	return m
+}
+
+func Commits(commits []*gitea_sdk.Commit) []map[string]any {
+	out := make([]map[string]any, 0, len(commits))
+	for _, c := range commits {
+		out = append(out, Commit(c))
+	}
+	return out
+}
+
 func Label(l *gitea_sdk.Label) map[string]any {
 	if l == nil {
 		return nil

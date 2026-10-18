@@ -205,7 +205,10 @@ Once configured, try `list all my repositories` in the chat box.
 | get_tag                      | tag          | Read   | Get tag details |
 | list_tags                    | tag          | Read   | List repository tags |
 | list_commits                 | commit       | Read   | List repository commits |
-| get_commit                   | commit       | Read   | Get commit details |
+| get_commit                   | commit       | Read   | Get commit details, optionally with its diff |
+| compare_commits              | commit       | Read   | Compare two refs: commits and changed files |
+| get_commit_status            | commit       | Read   | Get the combined status of a commit, branch or tag |
+| create_commit_status         | commit       | Write  | Create a status on a commit |
 | create_release               | release      | Write  | Create a release |
 | delete_release               | release      | Write  | Delete a release |
 | get_release                  | release      | Read   | Get a release by ID |
