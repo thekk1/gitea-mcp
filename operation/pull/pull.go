@@ -49,12 +49,15 @@ var (
 
 	PullRequestReadTool = tool.NewDefinition(
 		PullRequestReadToolName,
-		"Read pull request: details, diff, changed files, head commit status, reviews, review comments, discussion comments.",
+		"Read pull request: details, diff, changed files, commits, head commit status, reviews, review comments, discussion comments. Also find the PR for a branch pair or commit, and list who can be asked to review.",
 		annotation.ReadOnly("Read pull request details"),
-		tool.String("method", tool.Required(), tool.Enum("get", "get_diff", "get_files", "get_status", "get_reviews", "get_review", "get_review_comments", "get_comments")),
+		tool.String("method", tool.Required(), tool.Enum("get", "get_diff", "get_files", "get_commits", "get_status", "get_reviews", "get_review", "get_review_comments", "get_comments", "get_by_branches", "get_by_commit", "get_reviewer_candidates")),
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Number("pull_number", tool.Required()),
+		tool.Number("pull_number", tool.Description("required except for 'get_by_branches'/'get_by_commit'/'get_reviewer_candidates'")),
+		tool.String("base", tool.Description("base branch (for 'get_by_branches')")),
+		tool.String("head", tool.Description("head branch (for 'get_by_branches')")),
+		tool.String("sha", tool.Description("commit SHA (for 'get_by_commit')")),
 		tool.Number("review_id", tool.Description("for 'get_review'; optional for 'get_review_comments', omit to list all")),
 		tool.Number("wait_seconds", tool.Description(fmt.Sprintf("for 'get_status': seconds to wait while pending, max %d", maxStatusWaitSeconds))),
 		tool.Boolean("binary", tool.Description("include binary diff")),
@@ -74,9 +77,9 @@ var (
 		tool.String("body"),
 		tool.String("head", tool.Description("head branch (required for 'create')")),
 		tool.String("base", tool.Description("base branch (required for 'create')")),
-		tool.String("assignee", tool.Description("for 'update'")),
-		tool.Array("assignees", tool.Description("for 'update'"), tool.Items(map[string]any{"type": "string"})),
-		tool.Number("milestone", tool.Description("for 'update'")),
+		tool.String("assignee", tool.Description("for 'create'/'update'")),
+		tool.Array("assignees", tool.Description("for 'create'/'update'"), tool.Items(map[string]any{"type": "string"})),
+		tool.Number("milestone", tool.Description("for 'create'/'update'")),
 		tool.String("state", tool.Description("for 'update'"), tool.Enum("open", "closed")),
 		tool.Boolean("allow_maintainer_edit", tool.Description("for 'update'")),
 		tool.Array("labels", tool.Description("label IDs"), tool.Items(map[string]any{"type": "number"})),
@@ -88,8 +91,8 @@ var (
 		tool.Boolean("force_merge", tool.Description("merge even if checks fail")),
 		tool.Boolean("merge_when_checks_succeed", tool.Description("for 'merge'")),
 		tool.String("head_commit_id", tool.Description("expected head SHA for conflict detection")),
-		tool.Array("reviewers", tool.Description("for 'add_reviewers'/'remove_reviewers'"), tool.Items(map[string]any{"type": "string"})),
-		tool.Array("team_reviewers", tool.Description("for 'add_reviewers'/'remove_reviewers'"), tool.Items(map[string]any{"type": "string"})),
+		tool.Array("reviewers", tool.Description("for 'create'/'add_reviewers'/'remove_reviewers'"), tool.Items(map[string]any{"type": "string"})),
+		tool.Array("team_reviewers", tool.Description("for 'create'/'add_reviewers'/'remove_reviewers'"), tool.Items(map[string]any{"type": "string"})),
 		tool.Boolean("draft", tool.Description("uses 'WIP: ' title prefix")),
 	)
 
@@ -150,6 +153,8 @@ func pullRequestReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolR
 		return getPullRequestDiffFn(ctx, args)
 	case "get_files":
 		return getPullRequestFilesFn(ctx, args)
+	case "get_commits":
+		return listPullRequestCommitsFn(ctx, args)
 	case "get_status":
 		return getPullRequestStatusFn(ctx, args)
 	case "get_reviews":
@@ -160,6 +165,12 @@ func pullRequestReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolR
 		return listPullRequestReviewCommentsFn(ctx, args)
 	case "get_comments":
 		return issue.ListComments(ctx, args, "pull_number")
+	case "get_by_branches":
+		return getPullRequestByBranchesFn(ctx, args)
+	case "get_by_commit":
+		return getPullRequestByCommitFn(ctx, args)
+	case "get_reviewer_candidates":
+		return listReviewerCandidatesFn(ctx, args)
 	default:
 		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
 	}
@@ -426,10 +437,15 @@ func createPullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallToo
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
 	opt := gitea_sdk.CreatePullRequestOption{
-		Title: title,
-		Body:  params.GetOptionalString(args, "body", ""),
-		Head:  head,
-		Base:  base,
+		Title:         title,
+		Body:          params.GetOptionalString(args, "body", ""),
+		Head:          head,
+		Base:          base,
+		Assignee:      params.GetOptionalString(args, "assignee", ""),
+		Assignees:     params.GetStringSlice(args, "assignees"),
+		Reviewers:     params.GetStringSlice(args, "reviewers"),
+		TeamReviewers: params.GetStringSlice(args, "team_reviewers"),
+		Milestone:     params.GetOptionalInt(args, "milestone", 0),
 	}
 	if labelIDs, err := params.GetInt64Slice(args, "labels"); err == nil {
 		opt.Labels = labelIDs
@@ -1056,6 +1072,105 @@ func getPullRequestFilesFn(ctx context.Context, args map[string]any) (*mcp.CallT
 		return to.ErrorResult(fmt.Errorf("get %v/%v/pr/%v files err: %v", owner, repo, index, err))
 	}
 	return to.TextResult(files)
+}
+
+func listPullRequestCommitsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, err := params.GetString(args, "owner")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	repo, err := params.GetString(args, "repo")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	index, err := params.GetIndex(args, "pull_number")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	page, pageSize := params.GetPagination(args, 30)
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	commits, _, err := client.PullRequests.ListPullRequestCommits(ctx, owner, repo, index, gitea_sdk.ListPullRequestCommitsOptions{
+		Page: page, PageSize: pageSize,
+	})
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get %v/%v/pr/%v commits err: %v", owner, repo, index, err))
+	}
+	return to.TextResult(slim.Commits(commits))
+}
+
+func getPullRequestByBranchesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, err := params.GetString(args, "owner")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	repo, err := params.GetString(args, "repo")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	base, err := params.GetString(args, "base")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	head, err := params.GetString(args, "head")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	pr, _, err := client.PullRequests.GetPullRequestByBaseHead(ctx, owner, repo, base, head)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get %v/%v pr for %v...%v err: %v", owner, repo, base, head, err))
+	}
+	return to.TextResult(slimPullRequest(pr))
+}
+
+func getPullRequestByCommitFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, err := params.GetString(args, "owner")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	repo, err := params.GetString(args, "repo")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	sha, err := params.GetString(args, "sha")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	pr, _, err := client.PullRequests.GetCommitPullRequest(ctx, owner, repo, sha)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get %v/%v pr for commit %v err: %v", owner, repo, sha, err))
+	}
+	return to.TextResult(slimPullRequest(pr))
+}
+
+func listReviewerCandidatesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, err := params.GetString(args, "owner")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	repo, err := params.GetString(args, "repo")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	users, _, err := client.Repositories.GetReviewers(ctx, owner, repo)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get %v/%v reviewers err: %v", owner, repo, err))
+	}
+	return to.TextResult(slim.UserSummaries(users))
 }
 
 func getPullRequestStatusFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

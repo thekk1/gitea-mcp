@@ -27,6 +27,17 @@ func UserLogins(users []*gitea_sdk.User) []string {
 	return out
 }
 
+// UserSummaries keeps just enough to pick a user, e.g. as reviewer or assignee.
+func UserSummaries(users []*gitea_sdk.User) []map[string]any {
+	out := make([]map[string]any, 0, len(users))
+	for _, u := range users {
+		if u != nil {
+			out = append(out, map[string]any{"login": u.UserName, "full_name": u.FullName})
+		}
+	}
+	return out
+}
+
 func LabelNames(labels []*gitea_sdk.Label) []string {
 	if len(labels) == 0 {
 		return nil

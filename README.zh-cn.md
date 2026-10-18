@@ -177,10 +177,10 @@ Cursor 等客户端可使用 stdio 命令：
 | project_write                | project      | 写入 | 写入项目、列及议题所在列 |
 | list_issues                  | issue        | 读取 | 列出仓库问题 |
 | attachment_read              | issue        | 读取 | 读取问题/评论附件：列出元数据、获取元数据或下载内容 |
-| issue_read                   | issue        | 读取 | 读取问题：详情、评论、标签或依赖 |
+| issue_read                   | issue        | 读取 | 读取问题：详情、评论、标签、依赖或可指派用户 |
 | issue_write                  | issue        | 写入 | 写入问题：创建、更新、管理评论、标签和依赖 |
 | list_pull_requests           | pull_request | 读取 | 列出仓库拉取请求 |
-| pull_request_read            | pull_request | 读取 | 读取拉取请求：详情、差异、变更文件、头部提交状态、审查、审查评论、讨论评论 |
+| pull_request_read            | pull_request | 读取 | 读取拉取请求：详情、差异、变更文件、提交、头部提交状态、审查、审查评论、讨论评论、按分支或提交查找、可选审查者 |
 | pull_request_write           | pull_request | 写入 | 写入拉取请求：创建、更新、关闭、重新打开、合并、更新分支、管理审查者 |
 | pull_request_review_write    | pull_request | 写入 | 写入 PR 审查：创建、提交、删除、驳回、回复和解决审查评论 |
 | actions_config_read          | actions      | 读取 | 读取 Actions 密钥和变量 |

@@ -177,10 +177,10 @@ Once configured, try `list all my repositories` in the chat box.
 | project_write                | project      | Write  | Write projects, columns and issue placement |
 | list_issues                  | issue        | Read   | List repository issues |
 | attachment_read              | issue        | Read   | Read issue/comment attachments: list metadata, get metadata, or download content |
-| issue_read                   | issue        | Read   | Read issue: details, comments, labels, or dependencies |
+| issue_read                   | issue        | Read   | Read issue: details, comments, labels, dependencies, or assignee candidates |
 | issue_write                  | issue        | Write  | Write issues: create, update, manage comments, labels and dependencies |
 | list_pull_requests           | pull_request | Read   | List repository pull requests |
-| pull_request_read            | pull_request | Read   | Read pull request: details, diff, files, status, reviews, review comments, discussion comments |
+| pull_request_read            | pull_request | Read   | Read pull request: details, diff, files, commits, status, reviews, review comments, discussion comments, lookup by branches or commit, reviewer candidates |
 | pull_request_write           | pull_request | Write  | Write pull requests: create, update, close, reopen, merge, update branch, manage reviewers |
 | pull_request_review_write    | pull_request | Write  | Write PR reviews: create, submit, delete, dismiss, reply to and resolve review comments |
 | actions_config_read          | actions      | Read   | Read Actions secrets and variables |

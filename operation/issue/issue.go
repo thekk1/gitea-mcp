@@ -62,12 +62,12 @@ var (
 
 	IssueReadTool = tool.NewDefinition(
 		IssueReadToolName,
-		"Read issue: details, comments, labels, or dependencies.",
+		"Read issue: details, comments, labels, dependencies, or the users it can be assigned to.",
 		annotation.ReadOnly("Read issue details"),
-		tool.String("method", tool.Required(), tool.Enum("get", "get_comments", "get_comment", "get_labels", "get_blocked_by", "get_blocking")),
+		tool.String("method", tool.Required(), tool.Enum("get", "get_comments", "get_comment", "get_labels", "get_blocked_by", "get_blocking", "get_assignee_candidates")),
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Number("issue_number", tool.Description("required except for 'get_comment'")),
+		tool.Number("issue_number", tool.Description("required except for 'get_comment'/'get_assignee_candidates'")),
 		tool.Number("comment_id", tool.Description("for 'get_comment'")),
 		tool.Number("page", tool.Description("for 'get_blocked_by'/'get_blocking'"), tool.Default(1)),
 		tool.Number("per_page", tool.Description("for 'get_blocked_by'/'get_blocking'"), tool.Default(30)),
@@ -134,6 +134,8 @@ func issueReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 		return listIssueDependenciesFn(ctx, args, dependencyEndpoints["blocked_by"])
 	case "get_blocking":
 		return listIssueDependenciesFn(ctx, args, dependencyEndpoints["blocking"])
+	case "get_assignee_candidates":
+		return listAssigneeCandidatesFn(ctx, args)
 	default:
 		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
 	}
@@ -526,6 +528,27 @@ func getIssueLabelsFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 		return to.ErrorResult(fmt.Errorf("get %v/%v/issues/%v/labels err: %v", owner, repo, index, err))
 	}
 	return to.TextResult(slim.Labels(labels))
+}
+
+func listAssigneeCandidatesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, err := params.GetString(args, "owner")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	repo, err := params.GetString(args, "repo")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	users, _, err := client.Repositories.GetAssignees(ctx, owner, repo)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get %v/%v assignees err: %v", owner, repo, err))
+	}
+	return to.TextResult(slim.UserSummaries(users))
 }
 
 func addIssueLabelsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

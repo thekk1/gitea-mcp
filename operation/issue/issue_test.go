@@ -382,3 +382,27 @@ func Test_issueDependencyMethods(t *testing.T) {
 		})
 	}
 }
+
+func Test_issueReadFn_assigneeCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/version":
+			_, _ = w.Write([]byte(`{"version":"1.24.0"}`))
+		case "/api/v1/repos/octo/demo/assignees":
+			_, _ = w.Write([]byte(`[{"login":"alice","full_name":"Alice","email":"alice@example.com"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	defer func(host string) { flag.Host = host }(flag.Host)
+	flag.Host = server.URL
+
+	res, err := issueReadFn(context.Background(), map[string]any{"method": "get_assignee_candidates", "owner": "octo", "repo": "demo"})
+	if err != nil || res.IsError {
+		t.Fatalf("issueReadFn() result = %v, error = %v", res, err)
+	}
+	if body := res.Content[0].(*mcp.TextContent).Text; body != `[{"full_name":"Alice","login":"alice"}]` {
+		t.Fatalf("unexpected result: %s", body)
+	}
+}

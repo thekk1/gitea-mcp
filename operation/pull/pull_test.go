@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -328,7 +329,7 @@ func Test_mergePullRequestFn_newParams(t *testing.T) {
 	}
 }
 
-func Test_createPullRequestFn_labels(t *testing.T) {
+func Test_createPullRequestFn_options(t *testing.T) {
 	const (
 		owner = "octo"
 		repo  = "demo"
@@ -376,13 +377,17 @@ func Test_createPullRequestFn_labels(t *testing.T) {
 	}()
 
 	args := map[string]any{
-		"owner":    owner,
-		"repo":     repo,
-		"title":    "test",
-		"head":     "feature",
-		"base":     "main",
-		"labels":   []any{float64(1), float64(2)},
-		"deadline": "2026-06-01T00:00:00Z",
+		"owner":          owner,
+		"repo":           repo,
+		"title":          "test",
+		"head":           "feature",
+		"base":           "main",
+		"labels":         []any{float64(1), float64(2)},
+		"deadline":       "2026-06-01T00:00:00Z",
+		"assignees":      []any{"alice"},
+		"milestone":      float64(3),
+		"reviewers":      []any{"bob"},
+		"team_reviewers": []any{"core"},
 	}
 
 	_, err := createPullRequestFn(context.Background(), args)
@@ -402,6 +407,11 @@ func Test_createPullRequestFn_labels(t *testing.T) {
 	}
 	if gotBody["due_date"] == nil {
 		t.Fatalf("expected due_date to be set")
+	}
+	for key, want := range map[string]string{"assignees": "[alice]", "reviewers": "[bob]", "team_reviewers": "[core]", "milestone": "3"} {
+		if got := fmt.Sprint(gotBody[key]); got != want {
+			t.Errorf("request body %s = %s, want %s", key, got, want)
+		}
 	}
 }
 
@@ -1182,5 +1192,74 @@ func Test_pullRequestReadFn_getStatusWaitsWhileEmptyOrPending(t *testing.T) {
 		if err != nil || result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, call.wantState) {
 			t.Fatalf("wait_seconds %v: result = %v, error = %v", call.waitSeconds, result, err)
 		}
+	}
+}
+
+func Test_pullRequestReadFn_lookupMethods(t *testing.T) {
+	for _, tc := range []struct {
+		method     string
+		args       map[string]any
+		wantPath   string
+		wantQuery  string
+		response   string
+		wantResult string
+		wantAbsent string
+	}{
+		{
+			method:     "get_commits",
+			args:       map[string]any{"pull_number": float64(7), "page": float64(2), "per_page": float64(5)},
+			wantPath:   "/api/v1/repos/octo/demo/pulls/7/commits",
+			wantQuery:  "limit=5&page=2",
+			response:   `[{"sha":"abc","commit":{"message":"fix"},"files":[{"filename":"x.go"}]}]`,
+			wantResult: `"sha":"abc"`,
+			wantAbsent: `"files"`,
+		},
+		{
+			method:     "get_by_branches",
+			args:       map[string]any{"base": "main", "head": "feature"},
+			wantPath:   "/api/v1/repos/octo/demo/pulls/main/feature",
+			response:   `{"number":9,"title":"feat","state":"open"}`,
+			wantResult: `"number":9`,
+		},
+		{
+			method:     "get_by_commit",
+			args:       map[string]any{"sha": "abc"},
+			wantPath:   "/api/v1/repos/octo/demo/commits/abc/pull",
+			response:   `{"number":9,"title":"feat","state":"open"}`,
+			wantResult: `"number":9`,
+		},
+		{
+			method:     "get_reviewer_candidates",
+			args:       map[string]any{},
+			wantPath:   "/api/v1/repos/octo/demo/reviewers",
+			response:   `[{"login":"bob","full_name":"Bob","email":"bob@example.com"}]`,
+			wantResult: `{"full_name":"Bob","login":"bob"}`,
+			wantAbsent: `"email"`,
+		},
+	} {
+		t.Run(tc.method, func(t *testing.T) {
+			serveStub(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tc.wantPath || r.URL.RawQuery != tc.wantQuery {
+					t.Errorf("unexpected request: %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
+					http.NotFound(w, r)
+					return
+				}
+				_, _ = w.Write([]byte(tc.response))
+			})
+
+			args := map[string]any{"method": tc.method, "owner": "octo", "repo": "demo"}
+			maps.Copy(args, tc.args)
+			result, err := pullRequestReadFn(context.Background(), args)
+			if err != nil || result.IsError {
+				t.Fatalf("pullRequestReadFn() result = %v, error = %v", result, err)
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			if !strings.Contains(text, tc.wantResult) {
+				t.Errorf("result = %s, want it to contain %s", text, tc.wantResult)
+			}
+			if tc.wantAbsent != "" && strings.Contains(text, tc.wantAbsent) {
+				t.Errorf("result = %s, want it to omit %s", text, tc.wantAbsent)
+			}
+		})
 	}
 }
