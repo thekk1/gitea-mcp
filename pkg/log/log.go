@@ -11,7 +11,6 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap/zapcore"
-	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
@@ -29,33 +28,6 @@ func Default() *zap.Logger {
 		ec.EncodeTime = zapcore.TimeEncoderOfLayout(time.DateTime)
 		ec.EncodeLevel = zapcore.CapitalLevelEncoder
 
-		var ws zapcore.WriteSyncer
-		var wss []zapcore.WriteSyncer
-
-		home, _ := os.UserHomeDir()
-		if home == "" {
-			home = os.TempDir()
-		}
-
-		logDir := home + "/.gitea-mcp"
-		if err := os.MkdirAll(logDir, 0o700); err != nil {
-			// Fallback to temp directory if creation fails
-			logDir = os.TempDir()
-		}
-
-		wss = append(wss, zapcore.AddSync(&lumberjack.Logger{
-			Filename:   logDir + "/gitea-mcp.log",
-			MaxSize:    100,
-			MaxBackups: 10,
-			MaxAge:     30,
-		}))
-
-		if flag.Mode == "http" {
-			wss = append(wss, zapcore.AddSync(os.Stdout))
-		}
-
-		ws = zapcore.NewMultiWriteSyncer(wss...)
-
 		enc := zapcore.NewConsoleEncoder(ec)
 		var level zapcore.Level
 		if flag.Debug {
@@ -63,7 +35,7 @@ func Default() *zap.Logger {
 		} else {
 			level = zapcore.InfoLevel
 		}
-		core := zapcore.NewCore(enc, ws, level)
+		core := zapcore.NewCore(enc, zapcore.Lock(os.Stderr), level) // stdout carries the stdio transport's JSON-RPC
 		options := []zap.Option{
 			zap.AddStacktrace(zapcore.DPanicLevel),
 			zap.AddCaller(),

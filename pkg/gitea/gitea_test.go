@@ -20,6 +20,11 @@ import (
 	"time"
 
 	"gitea.com/gitea/gitea-mcp/pkg/flag"
+	"gitea.com/gitea/gitea-mcp/pkg/log"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestNewHTTPTransportPinsRequestsAndRedirectsToUnixSocket(t *testing.T) {
@@ -163,6 +168,39 @@ func TestExtraHeadersReachOnlyGiteaOriginWithoutOverridingRESTOrSDKHeaders(t *te
 			len(giteaHeader.Values("Content-Type")) != 1 || otherSecret != "" {
 			t.Errorf("%s: gitea headers %v, redirect target secret %q", name, giteaHeader, otherSecret)
 		}
+	}
+}
+
+func TestDebugLogsGiteaRequestsInsteadOfPrintingToStdout(t *testing.T) {
+	giteaSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer giteaSrv.Close()
+	origHost, origDebug := flag.Host, flag.Debug
+	defer func() { flag.Host, flag.Debug = origHost, origDebug }()
+	flag.Host, flag.Debug = giteaSrv.URL, true
+	core, logs := observer.New(zapcore.DebugLevel)
+	defer log.SetDefault(log.Default())
+	log.SetDefault(zap.New(core))
+
+	client, err := NewClient("the-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStdout := os.Stdout
+	os.Stdout = stdoutWriter
+	_, _, _ = client.Users.GetMyUserInfo(t.Context())
+	os.Stdout = origStdout
+	_ = stdoutWriter.Close()
+	stdout, _ := io.ReadAll(stdoutReader)
+
+	want := "GET " + giteaSrv.URL + "/api/v1/user: 401 Unauthorized"
+	if len(stdout) != 0 || logs.FilterMessage(want).Len() != 1 {
+		t.Errorf("stdout %q, logs %v, want only the log %q", stdout, logs.All(), want)
 	}
 }
 

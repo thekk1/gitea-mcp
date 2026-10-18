@@ -16,6 +16,7 @@ import (
 
 	mcpContext "gitea.com/gitea/gitea-mcp/pkg/context"
 	"gitea.com/gitea/gitea-mcp/pkg/flag"
+	"gitea.com/gitea/gitea-mcp/pkg/log"
 
 	"gitea.dev/sdk"
 )
@@ -27,7 +28,7 @@ var InitTransport = sync.OnceValues(func() (http.RoundTripper, error) { // calle
 	if err != nil {
 		return nil, err
 	}
-	return &extraHeaderTransport{base: transport}, nil
+	return &debugTransport{base: &extraHeaderTransport{base: transport}}, nil
 })
 
 func sharedTransport() http.RoundTripper {
@@ -36,6 +37,20 @@ func sharedTransport() http.RoundTripper {
 		panic(err) // unreachable, Execute exits when InitTransport fails
 	}
 	return transport
+}
+
+type debugTransport struct { // replaces the SDK's debug mode, which prints to stdout, the stdio transport's channel
+	base http.RoundTripper
+}
+
+func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		log.Debugf("%s %s: %v", req.Method, req.URL.Redacted(), err)
+		return nil, err
+	}
+	log.Debugf("%s %s: %s", req.Method, req.URL.Redacted(), resp.Status)
+	return resp, nil
 }
 
 type extraHeaderTransport struct { // the SDK has no per-request header hook
@@ -128,14 +143,7 @@ func NewClient(token string) (*gitea.Client, error) {
 		Transport:     sharedTransport(),
 		CheckRedirect: checkRedirect,
 	}
-	opts := []gitea.ClientOption{
-		gitea.SetToken(token),
-		gitea.SetHTTPClient(httpClient),
-	}
-	if flag.Debug {
-		opts = append(opts, gitea.SetDebugMode())
-	}
-	client, err := gitea.NewClient(flag.Host, opts...)
+	client, err := gitea.NewClient(flag.Host, gitea.SetToken(token), gitea.SetHTTPClient(httpClient))
 	if err != nil {
 		return nil, fmt.Errorf("create gitea client err: %w", err)
 	}

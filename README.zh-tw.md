@@ -18,7 +18,7 @@ make install
 
 ## 設定
 
-Gitea 主機與存取令牌可透過命令列參數或環境變數提供，命令列參數優先。執行 `gitea-mcp --help` 可查看完整的參數與環境變數列表。日誌寫入 `$HOME/.gitea-mcp/gitea-mcp.log`，加上 `-d` 可啟用除錯日誌。若 Gitea 監聽 Unix socket，傳入 `-gitea-unix-socket <path>`，主機將預設為 `http://unix/`。若需向 Gitea 傳送額外標頭（例如用於 Cloudflare Access），將 `GITEA_EXTRA_HEADERS` 設定為 JSON 物件，如 `{"CF-Access-Client-Id":"id","CF-Access-Client-Secret":"secret"}`。若 Gitea 要求雙向 TLS，透過 `-client-cert` 與 `-client-key` 傳入 PEM 檔案（不支援與 `-oauth` 同時使用），更新後的檔案無需重新啟動即可生效。`-ca-cert` 可將 PEM CA 憑證包加入系統根憑證，僅在啟動時讀取。
+Gitea 主機與存取令牌可透過命令列參數或環境變數提供，命令列參數優先。執行 `gitea-mcp --help` 可查看完整的參數與環境變數列表。日誌輸出至 stderr，加上 `-d` 可啟用除錯日誌，其中包含送往 Gitea 的每個請求。若 Gitea 監聽 Unix socket，傳入 `-gitea-unix-socket <path>`，主機將預設為 `http://unix/`。若需向 Gitea 傳送額外標頭（例如用於 Cloudflare Access），將 `GITEA_EXTRA_HEADERS` 設定為 JSON 物件，如 `{"CF-Access-Client-Id":"id","CF-Access-Client-Secret":"secret"}`。若 Gitea 要求雙向 TLS，透過 `-client-cert` 與 `-client-key` 傳入 PEM 檔案（不支援與 `-oauth` 同時使用），更新後的檔案無需重新啟動即可生效。`-ca-cert` 可將 PEM CA 憑證包加入系統根憑證，僅在啟動時讀取。
 
 ### MCP 協定與 HTTP 傳輸
 

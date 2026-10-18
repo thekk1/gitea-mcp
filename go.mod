@@ -9,7 +9,6 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	go.uber.org/zap v1.28.0
 	go.uber.org/zap/exp v0.3.0
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (

@@ -18,7 +18,7 @@ make install
 
 ## Configuration
 
-Pass the Gitea host and access token as command-line flags or environment variables, flags take precedence. Run `gitea-mcp --help` for the full list of flags and environment variables. Logs are written to `$HOME/.gitea-mcp/gitea-mcp.log`, add `-d` for debug logging. To reach a Gitea listening on a Unix socket, pass `-gitea-unix-socket <path>`, the host then defaults to `http://unix/`. To send extra headers to Gitea, for example for Cloudflare Access, set `GITEA_EXTRA_HEADERS` to a JSON object like `{"CF-Access-Client-Id":"id","CF-Access-Client-Secret":"secret"}`. For a Gitea that requires mutual TLS, pass PEM files with `-client-cert` and `-client-key`, which `-oauth` does not support. Renewed files apply without a restart. `-ca-cert` adds a PEM CA bundle to the system roots, read once at startup.
+Pass the Gitea host and access token as command-line flags or environment variables, flags take precedence. Run `gitea-mcp --help` for the full list of flags and environment variables. Logs go to stderr, add `-d` for debug logging, which includes every request sent to Gitea. To reach a Gitea listening on a Unix socket, pass `-gitea-unix-socket <path>`, the host then defaults to `http://unix/`. To send extra headers to Gitea, for example for Cloudflare Access, set `GITEA_EXTRA_HEADERS` to a JSON object like `{"CF-Access-Client-Id":"id","CF-Access-Client-Secret":"secret"}`. For a Gitea that requires mutual TLS, pass PEM files with `-client-cert` and `-client-key`, which `-oauth` does not support. Renewed files apply without a restart. `-ca-cert` adds a PEM CA bundle to the system roots, read once at startup.
 
 ### MCP protocol and HTTP transport
 
