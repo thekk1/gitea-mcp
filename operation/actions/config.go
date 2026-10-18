@@ -68,7 +68,7 @@ var (
 		tool.String("name", tool.Description("secret or variable name")),
 		tool.String("data", tool.Description("secret value (upsert)")),
 		tool.String("value", tool.Description("variable value")),
-		tool.String("description"),
+		tool.String("description", tool.Description("for secrets and org variables")),
 	)
 )
 

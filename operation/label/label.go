@@ -48,7 +48,7 @@ var (
 		tool.String("name", tool.Description("required for create")),
 		tool.String("color", tool.Description("hex (#RRGGBB); required for create")),
 		tool.String("description"),
-		tool.Boolean("exclusive", tool.Description("exclusive (org only)")),
+		tool.Boolean("exclusive", tool.Description("mutually exclusive with labels of the same scope, e.g. 'priority/'")),
 		tool.Boolean("is_archived", tool.Description("archived (repo only)")),
 	)
 )
@@ -173,13 +173,14 @@ func createRepoLabelFn(ctx context.Context, args map[string]any) (*mcp.CallToolR
 		return to.ErrorResult(err)
 	}
 	description, _ := args["description"].(string) // Optional
-
+	exclusive, _ := args["exclusive"].(bool)
 	isArchived, _ := args["is_archived"].(bool)
 
 	opt := gitea_sdk.CreateLabelOption{
 		Name:        name,
 		Color:       color,
 		Description: description,
+		Exclusive:   exclusive,
 		IsArchived:  isArchived,
 	}
 
@@ -212,6 +213,7 @@ func editRepoLabelFn(ctx context.Context, args map[string]any) (*mcp.CallToolRes
 		Name:        params.GetOptionalStringPtr(args, "name"),
 		Color:       params.GetOptionalStringPtr(args, "color"),
 		Description: params.GetPresentStringPtr(args, "description"),
+		Exclusive:   params.GetOptionalBoolPtr(args, "exclusive"),
 		IsArchived:  params.GetOptionalBoolPtr(args, "is_archived"),
 	}
 

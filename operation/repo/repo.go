@@ -203,5 +203,5 @@ func ListOrgReposFn(ctx context.Context, args map[string]any) (*mcp.CallToolResu
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("list organization '%s' repositories error: %v", org, err))
 	}
-	return to.TextResult(repos)
+	return to.TextResult(slim.Repos(repos))
 }

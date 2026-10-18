@@ -383,6 +383,31 @@ func Test_issueDependencyMethods(t *testing.T) {
 	}
 }
 
+func Test_issueWriteFn_editCommentID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/version":
+			_, _ = w.Write([]byte(`{"version":"1.24.0"}`))
+		case "PATCH /api/v1/repos/octo/demo/issues/comments/42":
+			_, _ = w.Write([]byte(`{"id":42,"body":"new"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	defer func(host string) { flag.Host = host }(flag.Host)
+	flag.Host = server.URL
+
+	for _, key := range []string{"comment_id", "commentID"} {
+		t.Run(key, func(t *testing.T) {
+			res, err := issueWriteFn(context.Background(), map[string]any{"method": "edit_comment", "owner": "octo", "repo": "demo", key: float64(42), "body": "new"})
+			if err != nil || res.IsError {
+				t.Fatalf("issueWriteFn() result = %v, error = %v", res, err)
+			}
+		})
+	}
+}
+
 func Test_issueReadFn_assigneeCandidates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

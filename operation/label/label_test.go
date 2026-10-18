@@ -57,16 +57,16 @@ func TestLabelRequestsAndSlimResults(t *testing.T) {
 		},
 		{
 			handler:     labelWriteFn,
-			args:        map[string]any{"method": "create_repo_label", "owner": "o", "repo": "r", "name": "bug", "color": "#ff0000", "description": "a bug", "is_archived": true},
+			args:        map[string]any{"method": "create_repo_label", "owner": "o", "repo": "r", "name": "bug", "color": "#ff0000", "description": "a bug", "exclusive": true, "is_archived": true},
 			response:    label,
-			wantRequest: `POST /api/v1/repos/o/r/labels {"name":"bug","color":"#ff0000","description":"a bug","exclusive":false,"is_archived":true}`,
+			wantRequest: `POST /api/v1/repos/o/r/labels {"name":"bug","color":"#ff0000","description":"a bug","exclusive":true,"is_archived":true}`,
 			wantResult:  slimLabel,
 		},
 		{
 			handler:     labelWriteFn,
-			args:        map[string]any{"method": "edit_repo_label", "owner": "o", "repo": "r", "id": 7.0, "name": "defect", "description": "", "is_archived": false},
+			args:        map[string]any{"method": "edit_repo_label", "owner": "o", "repo": "r", "id": 7.0, "name": "defect", "description": "", "exclusive": false, "is_archived": false},
 			response:    label,
-			wantRequest: `PATCH /api/v1/repos/o/r/labels/7 {"name":"defect","color":null,"description":"","exclusive":null,"is_archived":false}`,
+			wantRequest: `PATCH /api/v1/repos/o/r/labels/7 {"name":"defect","color":null,"description":"","exclusive":false,"is_archived":false}`,
 			wantResult:  slimLabel,
 		},
 		{

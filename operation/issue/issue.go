@@ -86,7 +86,8 @@ var (
 		tool.Array("assignees", tool.Items(map[string]any{"type": "string"})),
 		tool.Number("milestone"),
 		tool.String("state", tool.Enum("open", "closed", "all")),
-		tool.Number("commentID", tool.Description("for 'edit_comment'")),
+		tool.Number("comment_id", tool.Description("for 'edit_comment'")),
+		tool.Number("commentID", tool.Description("deprecated alias of comment_id")),
 		tool.Array("labels", tool.Description("label IDs"), tool.Items(map[string]any{"type": "number"})),
 		tool.Number("label_id", tool.Description("for 'remove_label'")),
 		tool.String("ref", tool.Description("branch to associate")),
@@ -373,7 +374,11 @@ func editIssueCommentFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	commentID, err := params.GetIndex(args, "commentID")
+	commentKey := "comment_id"
+	if _, ok := args[commentKey]; !ok {
+		commentKey = "commentID" // deprecated name, kept for existing callers
+	}
+	commentID, err := params.GetIndex(args, commentKey)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
