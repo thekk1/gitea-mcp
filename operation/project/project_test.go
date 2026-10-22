@@ -57,6 +57,47 @@ func TestProjectRequestsAndSlimResults(t *testing.T) {
 			wantResult:  `"ok"`,
 		},
 		{
+			handler:     projectWriteFn,
+			args:        map[string]any{"method": "update_column", "project_id": 3.0, "column_id": 4.0, "color": "#FF0000", "sorting": 2.0},
+			response:    `{"id":4,"title":"Doing","sorting":2,"color":"#FF0000","project_id":3}`,
+			wantRequest: `PATCH /api/v1/user/projects/3/columns/4 {"color":"#FF0000","sorting":2}`,
+			wantResult:  `{"id":4,"title":"Doing","sorting":2,"color":"#FF0000"}`,
+		},
+		{
+			handler:     projectWriteFn,
+			args:        map[string]any{"method": "move_columns", "project_id": 3.0, "column_ids": []any{5.0, "4"}},
+			wantRequest: `POST /api/v1/user/projects/3/columns/move {"column_ids":[5,4]}`,
+			wantResult:  `"ok"`,
+		},
+		{
+			handler:     projectWriteFn,
+			args:        map[string]any{"method": "set_default_column", "project_id": 3.0, "column_id": 4.0},
+			wantRequest: "POST /api/v1/user/projects/3/columns/4/default",
+			wantResult:  `"ok"`,
+		},
+		{
+			handler:     projectWriteFn,
+			args:        map[string]any{"method": "move_issue", "project_id": 3.0, "column_id": 4.0, "issue_id": 5.0, "sorting": 1.0},
+			wantRequest: `POST /api/v1/user/projects/3/issues/5/move {"column_id":4,"sorting":1}`,
+			wantResult:  `"ok"`,
+		},
+		{
+			handler:     projectWriteFn,
+			args:        map[string]any{"method": "move_issue", "project_id": 3.0, "column_id": 4.0, "issue_id": 5.0, "sorting": nil},
+			wantRequest: `POST /api/v1/user/projects/3/issues/5/move {"column_id":4}`,
+			wantResult:  `"ok"`,
+		},
+		{
+			handler:    projectWriteFn,
+			args:       map[string]any{"method": "move_columns", "project_id": 3.0},
+			wantResult: "column_ids (array of IDs) is required",
+		},
+		{
+			handler:    projectWriteFn,
+			args:       map[string]any{"method": "update_column", "project_id": 3.0, "column_id": 4.0, "sorting": "left"},
+			wantResult: `sorting must be a valid integer (got "left")`,
+		},
+		{
 			handler:    projectReadFn,
 			args:       map[string]any{"method": "list", "owner": "o"},
 			wantResult: "owner and repo must be set together",
