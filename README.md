@@ -192,7 +192,7 @@ Once configured, try `list all my repositories` in the chat box.
 | list_my_repos                | repository   | Read   | List repositories owned by the current user |
 | list_org_repos               | repository   | Read   | List repositories in an organization |
 | get_repository_tree          | repository   | Read   | Get the repository file tree |
-| get_file_contents            | file         | Read   | Get file content and metadata |
+| get_file_contents            | file         | Read   | Get file content and metadata, or list a directory |
 | get_dir_contents             | file         | Read   | Get the entries in a directory |
 | create_or_update_file        | file         | Write  | Write files in one commit: create, update, rename, delete |
 | delete_file                  | file         | Write  | Delete a file |

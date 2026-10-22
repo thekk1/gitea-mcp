@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"unicode/utf8"
 
@@ -45,12 +46,13 @@ var (
 
 	GetFileContentTool = tool.NewDefinition(
 		GetFileToolName,
-		"Get file content and metadata",
-		annotation.ReadOnly("Get file content"),
+		"Get file content and metadata, or list a directory",
+		annotation.ReadOnly("Get file or directory contents"),
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("ref", tool.Required(), tool.Description("branch, tag, or commit SHA")),
-		tool.String("path", tool.Required(), tool.Description(params.PathDesc)),
+		tool.String("path", tool.Default("/"), tool.Description(params.PathDesc)),
+		tool.String("ref", tool.Description("branch, tag, or commit SHA, defaults to the default branch")),
+		tool.String("sha", tool.Description("commit SHA, overrides ref")),
 		tool.Boolean("withLines", tool.Description("return numbered lines")),
 		tool.Number("start_line", tool.Minimum(1)),
 		tool.Number("end_line", tool.Minimum(1)),
@@ -135,7 +137,8 @@ type getFileContentArgs struct {
 	Owner     string `json:"owner" required:"true"`
 	Repo      string `json:"repo" required:"true"`
 	Ref       string `json:"ref"`
-	Path      string `json:"path" required:"true"`
+	SHA       string `json:"sha"`
+	Path      string `json:"path"`
 	WithLines bool   `json:"withLines"`
 	StartLine int    `json:"start_line"`
 	EndLine   int    `json:"end_line"`
@@ -191,18 +194,32 @@ func GetFileContentFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
-	client, err := gitea.ClientFromContext(ctx)
-	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	segments := strings.Split(strings.Trim(in.Path, "/"), "/")
+	for i, segment := range segments {
+		if segment == "." || segment == ".." { // PathEscape keeps them, so they would traverse out of the contents endpoint
+			return to.ErrorResult(fmt.Errorf("invalid path segment %q", segment))
+		}
+		segments[i] = url.PathEscape(segment)
 	}
-	content, _, err := client.Repositories.GetContents(ctx, in.Owner, in.Repo, in.Ref, in.Path)
-	if err != nil {
+	var body json.RawMessage
+	if _, err := gitea.DoJSON(ctx, "GET", fmt.Sprintf("repos/%s/%s/contents/%s", url.PathEscape(in.Owner), url.PathEscape(in.Repo), strings.Join(segments, "/")), url.Values{"ref": {cmp.Or(in.SHA, in.Ref)}}, nil, &body); err != nil {
 		return to.ErrorResult(fmt.Errorf("get file err: %v", err))
+	}
+	if body[0] == '[' {
+		var entries []*gitea_sdk.ContentsResponse
+		if err := json.Unmarshal(body, &entries); err != nil {
+			return to.ErrorResult(fmt.Errorf("decode directory err: %v", err))
+		}
+		return to.TextResult(slimDirEntries(entries))
+	}
+	content := new(gitea_sdk.ContentsResponse)
+	if err := json.Unmarshal(body, content); err != nil {
+		return to.ErrorResult(fmt.Errorf("decode file err: %v", err))
 	}
 
 	rangeRequested := in.StartLine > 0 || in.EndLine > 0
 	if !in.WithLines && !rangeRequested {
-		return to.TextResult(slimContents(content))
+		return to.StructuredResult(slimContents(content))
 	}
 
 	raw, err := decodeContent(content)
@@ -241,7 +258,7 @@ func GetFileContentFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 		result["end_line"] = selection.Last
 		result["truncated"] = selection.First > 1 || selection.Last < selection.Total
 	}
-	return to.TextResult(result)
+	return to.StructuredResult(result)
 }
 
 func decodeContent(content *gitea_sdk.ContentsResponse) ([]byte, error) {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,14 @@ func serveContents(t *testing.T, files map[string]string, onChange func(body map
 			return
 		}
 		filePath := strings.TrimPrefix(r.URL.Path, "/api/v1/repos/octo/demo/contents/")
+		if filePath == "" {
+			entries := []map[string]any{}
+			for _, name := range slices.Sorted(maps.Keys(files)) {
+				entries = append(entries, map[string]any{"name": name, "path": name, "type": "file"})
+			}
+			_ = json.NewEncoder(w).Encode(entries)
+			return
+		}
 		content, ok := files[filePath]
 		if !ok {
 			http.NotFound(w, r)
@@ -38,6 +47,7 @@ func serveContents(t *testing.T, files map[string]string, onChange func(body map
 			"sha":      "sha-" + filePath,
 			"encoding": "base64",
 			"content":  base64.StdEncoding.EncodeToString([]byte(content)),
+			"html_url": "/src/" + r.URL.Query().Get("ref") + "/" + filePath,
 		})
 	}))
 	t.Cleanup(server.Close)
@@ -189,14 +199,31 @@ func TestApplyEdits(t *testing.T) {
 	}
 }
 
-func TestGetFileContentFnLines(t *testing.T) {
+func TestGetFileContentFn(t *testing.T) {
 	serveContents(t, map[string]string{"a.txt": "a\r\nb\nc\n", "bin": "\x00\xff\n"}, nil)
 
 	for _, tc := range []struct {
-		name string
-		args map[string]any
-		want map[string]any
+		name    string
+		args    map[string]any
+		want    map[string]any
+		wantDir []string
+		wantErr string
 	}{
+		{
+			name:    "dot segment rejected",
+			args:    map[string]any{"path": "a/../../../user"},
+			wantErr: `invalid path segment ".."`,
+		},
+		{
+			name: "whole file at sha",
+			args: map[string]any{"path": "a.txt", "sha": "abc"},
+			want: map[string]any{"content": base64.StdEncoding.EncodeToString([]byte("a\r\nb\nc\n")), "encoding": "base64", "html_url": "/src/abc/a.txt"},
+		},
+		{
+			name:    "directory",
+			args:    map[string]any{"path": "/"},
+			wantDir: []string{"a.txt", "bin"},
+		},
 		{
 			name: "range",
 			args: map[string]any{"path": "a.txt", "start_line": 2.0, "end_line": 2.0},
@@ -230,11 +257,35 @@ func TestGetFileContentFnLines(t *testing.T) {
 			args := map[string]any{"owner": "octo", "repo": "demo", "ref": "main"}
 			maps.Copy(args, tc.args)
 			result, err := GetFileContentFn(context.Background(), args)
-			if err != nil || result.IsError {
-				t.Fatalf("GetFileContentFn() = %v, %v", result, err)
+			if err != nil {
+				t.Fatalf("GetFileContentFn() error = %v", err)
+			}
+			text := resultText(t, result)
+			if result.IsError != (tc.wantErr != "") || !strings.Contains(text, tc.wantErr) {
+				t.Fatalf("result = %s, want error %q", text, tc.wantErr)
+			}
+			if tc.wantErr != "" {
+				return
+			}
+			if tc.wantDir != nil {
+				var entries []map[string]any
+				if err := json.Unmarshal([]byte(text), &entries); err != nil {
+					t.Fatal(err)
+				}
+				var names []string
+				for _, entry := range entries {
+					names = append(names, entry["name"].(string))
+				}
+				if !slices.Equal(names, tc.wantDir) {
+					t.Fatalf("entries = %v, want %v", names, tc.wantDir)
+				}
+				return
+			}
+			if structured, _ := result.StructuredContent.(json.RawMessage); string(structured) != text {
+				t.Errorf("structuredContent = %s, want %s", structured, text)
 			}
 			var got map[string]any
-			if err := json.Unmarshal([]byte(resultText(t, result)), &got); err != nil {
+			if err := json.Unmarshal([]byte(text), &got); err != nil {
 				t.Fatal(err)
 			}
 			for key, want := range tc.want {

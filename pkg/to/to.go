@@ -23,6 +23,19 @@ func TextResult(v any) (*mcp.CallToolResult, error) {
 	}, nil
 }
 
+const maxStructuredBytes = 8 << 20 // text plus structuredContent stays under go-sdk's 16 MiB stdio line limit
+
+func StructuredResult(value map[string]any) (*mcp.CallToolResult, error) { // ChatGPT misreads JSON text with a top-level "content" key as a nested result
+	result, err := TextResult(value)
+	if err != nil {
+		return nil, err
+	}
+	if text := result.Content[0].(*mcp.TextContent).Text; len(text) <= maxStructuredBytes {
+		result.StructuredContent = json.RawMessage(text)
+	}
+	return result, nil
+}
+
 func ErrorResult(err error) (*mcp.CallToolResult, error) {
 	log.Errorf("%s", err.Error())
 	var result mcp.CallToolResult

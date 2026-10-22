@@ -2,6 +2,7 @@ package to
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,6 +22,16 @@ func TestTextResult(t *testing.T) {
 	}
 	if content.Text != `{"name":"gitea"}` {
 		t.Errorf("Text = %q, want JSON object", content.Text)
+	}
+}
+
+func TestStructuredResultOmitsOversizedStructuredContent(t *testing.T) {
+	result, err := StructuredResult(map[string]any{"content": strings.Repeat("a", maxStructuredBytes)})
+	if err != nil {
+		t.Fatalf("StructuredResult() error = %v", err)
+	}
+	if result.StructuredContent != nil || len(result.Content) != 1 {
+		t.Errorf("StructuredContent set = %v, len(Content) = %d, want unset and 1", result.StructuredContent != nil, len(result.Content))
 	}
 }
 
