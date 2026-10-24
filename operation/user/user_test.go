@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

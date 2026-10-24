@@ -20,7 +20,7 @@ func TestSearchToolsRequiredFields(t *testing.T) {
 		},
 		{
 			name:     "search_org_teams",
-			tool:     SearOrgTeamsTool,
+			tool:     SearchOrgTeamsTool,
 			required: []string{"org", "query"},
 		},
 		{

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"gitea.com/gitea/gitea-mcp/cmd"
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
 )
 
 var Version = "dev"

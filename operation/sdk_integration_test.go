@@ -18,10 +18,10 @@ import (
 	"testing"
 	"time"
 
-	mcpContext "gitea.com/gitea/gitea-mcp/pkg/context"
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
-	projectTo "gitea.com/gitea/gitea-mcp/pkg/to"
-	projectTool "gitea.com/gitea/gitea-mcp/pkg/tool"
+	mcpContext "gitea.com/gitea/gitea-mcp/internal/context"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
+	projectTo "gitea.com/gitea/gitea-mcp/internal/to"
+	projectTool "gitea.com/gitea/gitea-mcp/internal/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

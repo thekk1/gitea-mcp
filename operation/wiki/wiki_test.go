@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	mcpContext "gitea.com/gitea/gitea-mcp/pkg/context"
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
+	mcpContext "gitea.com/gitea/gitea-mcp/internal/context"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
 )
 
 func TestWikiWriteBase64Encoding(t *testing.T) {

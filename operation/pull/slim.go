@@ -1,7 +1,7 @@
 package pull
 
 import (
-	"gitea.com/gitea/gitea-mcp/pkg/slim"
+	"gitea.com/gitea/gitea-mcp/internal/slim"
 
 	gitea_sdk "gitea.dev/sdk"
 )

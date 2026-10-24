@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
 )
 
 const metadataPath = "/.well-known/oauth-protected-resource" + mcpPath

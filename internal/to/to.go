@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
-	"gitea.com/gitea/gitea-mcp/pkg/log"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/log"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

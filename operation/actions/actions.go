@@ -1,7 +1,7 @@
 package actions
 
 import (
-	"gitea.com/gitea/gitea-mcp/pkg/tool"
+	"gitea.com/gitea/gitea-mcp/internal/tool"
 )
 
 // Tool is the registry for all Actions-related MCP tools.

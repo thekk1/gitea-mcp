@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"gitea.com/gitea/gitea-mcp/pkg/gitea"
-	"gitea.com/gitea/gitea-mcp/pkg/params"
-	"gitea.com/gitea/gitea-mcp/pkg/to"
+	"gitea.com/gitea/gitea-mcp/internal/gitea"
+	"gitea.com/gitea/gitea-mcp/internal/params"
+	"gitea.com/gitea/gitea-mcp/internal/to"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

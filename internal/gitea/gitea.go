@@ -14,9 +14,9 @@ import (
 	"strings"
 	"sync"
 
-	mcpContext "gitea.com/gitea/gitea-mcp/pkg/context"
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
-	"gitea.com/gitea/gitea-mcp/pkg/log"
+	mcpContext "gitea.com/gitea/gitea-mcp/internal/context"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/log"
 
 	"gitea.dev/sdk"
 )

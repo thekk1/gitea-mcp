@@ -12,6 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	mcpContext "gitea.com/gitea/gitea-mcp/internal/context"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/gitea"
+	"gitea.com/gitea/gitea-mcp/internal/log"
+	"gitea.com/gitea/gitea-mcp/internal/oauth"
+	"gitea.com/gitea/gitea-mcp/internal/tool"
 	"gitea.com/gitea/gitea-mcp/operation/actions"
 	"gitea.com/gitea/gitea-mcp/operation/issue"
 	"gitea.com/gitea/gitea-mcp/operation/label"
@@ -26,12 +32,6 @@ import (
 	"gitea.com/gitea/gitea-mcp/operation/user"
 	"gitea.com/gitea/gitea-mcp/operation/version"
 	"gitea.com/gitea/gitea-mcp/operation/wiki"
-	mcpContext "gitea.com/gitea/gitea-mcp/pkg/context"
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
-	"gitea.com/gitea/gitea-mcp/pkg/gitea"
-	"gitea.com/gitea/gitea-mcp/pkg/log"
-	"gitea.com/gitea/gitea-mcp/pkg/oauth"
-	"gitea.com/gitea/gitea-mcp/pkg/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"

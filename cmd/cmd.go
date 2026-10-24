@@ -12,10 +12,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	flagPkg "gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/gitea"
+	"gitea.com/gitea/gitea-mcp/internal/log"
 	"gitea.com/gitea/gitea-mcp/operation"
-	flagPkg "gitea.com/gitea/gitea-mcp/pkg/flag"
-	"gitea.com/gitea/gitea-mcp/pkg/gitea"
-	"gitea.com/gitea/gitea-mcp/pkg/log"
 )
 
 var (

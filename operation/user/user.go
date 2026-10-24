@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"gitea.com/gitea/gitea-mcp/pkg/annotation"
-	"gitea.com/gitea/gitea-mcp/pkg/gitea"
-	"gitea.com/gitea/gitea-mcp/pkg/params"
-	"gitea.com/gitea/gitea-mcp/pkg/slim"
-	"gitea.com/gitea/gitea-mcp/pkg/to"
-	"gitea.com/gitea/gitea-mcp/pkg/tool"
+	"gitea.com/gitea/gitea-mcp/internal/annotation"
+	"gitea.com/gitea/gitea-mcp/internal/gitea"
+	"gitea.com/gitea/gitea-mcp/internal/params"
+	"gitea.com/gitea/gitea-mcp/internal/slim"
+	"gitea.com/gitea/gitea-mcp/internal/to"
+	"gitea.com/gitea/gitea-mcp/internal/tool"
 
 	gitea_sdk "gitea.dev/sdk"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

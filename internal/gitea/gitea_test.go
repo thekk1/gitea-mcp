@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
-	"gitea.com/gitea/gitea-mcp/pkg/log"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/log"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

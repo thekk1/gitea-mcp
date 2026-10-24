@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.com/gitea/gitea-mcp/pkg/flag"
-	"gitea.com/gitea/gitea-mcp/pkg/gitea"
+	"gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/gitea"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

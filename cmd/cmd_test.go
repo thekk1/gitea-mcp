@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	flagPkg "gitea.com/gitea/gitea-mcp/pkg/flag"
+	flagPkg "gitea.com/gitea/gitea-mcp/internal/flag"
 )
 
 func TestInitFlagSetBind(t *testing.T) {
