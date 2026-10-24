@@ -77,17 +77,16 @@ var (
 		IssueWriteToolName,
 		"Write issues: create, update, manage comments, labels and dependencies.",
 		annotation.Write("Create or update issues, comments, labels, and dependencies"),
-		tool.String("method", tool.Required(), tool.Enum("create", "update", "add_comment", "edit_comment", "add_labels", "remove_label", "replace_labels", "clear_labels", "add_dependency", "remove_dependency")),
+		tool.String("method", tool.Required(), tool.Enum("create", "update", "add_comment", "update_comment", "add_labels", "remove_label", "replace_labels", "clear_labels", "add_dependency", "remove_dependency")),
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 		tool.Number("issue_number", tool.Description("required except for 'create'")),
 		tool.String("title", tool.Description("required for 'create'")),
-		tool.String("body", tool.Description("required for 'add_comment'/'edit_comment'")),
+		tool.String("body", tool.Description("required for 'add_comment'/'update_comment'")),
 		tool.Array("assignees", tool.Items(map[string]any{"type": "string"})),
 		tool.Number("milestone"),
 		tool.String("state", tool.Enum("open", "closed", "all")),
-		tool.Number("comment_id", tool.Description("for 'edit_comment'")),
-		tool.Number("commentID", tool.Description("deprecated alias of comment_id")),
+		tool.Number("comment_id", tool.Description("for 'update_comment'")),
 		tool.Array("labels", tool.Description("label IDs"), tool.Items(map[string]any{"type": "number"})),
 		tool.Number("label_id", tool.Description("for 'remove_label'")),
 		tool.String("ref", tool.Description("branch to associate")),
@@ -154,7 +153,7 @@ func issueWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 		return editIssueFn(ctx, args)
 	case "add_comment":
 		return createIssueCommentFn(ctx, args)
-	case "edit_comment":
+	case "update_comment":
 		return editIssueCommentFn(ctx, args)
 	case "add_labels":
 		return addIssueLabelsFn(ctx, args)
@@ -374,11 +373,7 @@ func editIssueCommentFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	commentKey := "comment_id"
-	if _, ok := args[commentKey]; !ok {
-		commentKey = "commentID" // deprecated name, kept for existing callers
-	}
-	commentID, err := params.GetIndex(args, commentKey)
+	commentID, err := params.GetIndex(args, "comment_id")
 	if err != nil {
 		return to.ErrorResult(err)
 	}

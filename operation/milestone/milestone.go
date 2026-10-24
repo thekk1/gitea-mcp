@@ -40,7 +40,7 @@ var (
 		MilestoneWriteToolName,
 		"Write milestones: create, update, delete.",
 		annotation.Destructive("Create, update, or delete milestones"),
-		tool.String("method", tool.Required(), tool.Enum("create", "update", "edit", "delete")),
+		tool.String("method", tool.Required(), tool.Enum("create", "update", "delete")),
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 		tool.Number("id", tool.Description("for 'update'/'delete'")),
@@ -86,8 +86,6 @@ func milestoneWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	case "create":
 		return createMilestoneFn(ctx, args)
 	case "update":
-		return editMilestoneFn(ctx, args)
-	case "edit":
 		return editMilestoneFn(ctx, args)
 	case "delete":
 		return deleteMilestoneFn(ctx, args)

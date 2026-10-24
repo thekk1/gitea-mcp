@@ -40,7 +40,7 @@ var (
 		LabelWriteToolName,
 		"Write labels (repo or org): create, edit, delete.",
 		annotation.Destructive("Create, update, or delete labels"),
-		tool.String("method", tool.Required(), tool.Enum("create_repo_label", "edit_repo_label", "delete_repo_label", "create_org_label", "edit_org_label", "delete_org_label")),
+		tool.String("method", tool.Required(), tool.Enum("create_repo_label", "update_repo_label", "delete_repo_label", "create_org_label", "update_org_label", "delete_org_label")),
 		tool.String("owner", tool.Description("for repo methods")),
 		tool.String("repo", tool.Description("for repo methods")),
 		tool.String("org", tool.Description("for org methods")),
@@ -89,13 +89,13 @@ func labelWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	switch method {
 	case "create_repo_label":
 		return createRepoLabelFn(ctx, args)
-	case "edit_repo_label":
+	case "update_repo_label":
 		return editRepoLabelFn(ctx, args)
 	case "delete_repo_label":
 		return deleteRepoLabelFn(ctx, args)
 	case "create_org_label":
 		return createOrgLabelFn(ctx, args)
-	case "edit_org_label":
+	case "update_org_label":
 		return editOrgLabelFn(ctx, args)
 	case "delete_org_label":
 		return deleteOrgLabelFn(ctx, args)

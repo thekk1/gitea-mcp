@@ -44,12 +44,12 @@ func TestWikiWriteBase64Encoding(t *testing.T) {
 			ctx := context.WithValue(context.Background(), mcpContext.TokenContextKey, "test-token")
 
 			args := map[string]any{
-				"method":   tt.method,
-				"owner":    "org",
-				"repo":     "repo",
-				"content":  tt.content,
-				"pageName": "TestPage",
-				"title":    "TestPage",
+				"method":    tt.method,
+				"owner":     "org",
+				"repo":      "repo",
+				"content":   tt.content,
+				"page_name": "TestPage",
+				"title":     "TestPage",
 			}
 
 			result, err := wikiWriteFn(ctx, args)

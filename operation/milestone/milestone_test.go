@@ -58,7 +58,7 @@ func TestMilestoneRequestsAndSlimResults(t *testing.T) {
 		},
 		{
 			handler:     milestoneWriteFn,
-			args:        map[string]any{"method": "edit", "owner": "o", "repo": "r", "id": 42.0, "state": "closed", "due_on": due},
+			args:        map[string]any{"method": "update", "owner": "o", "repo": "r", "id": 42.0, "state": "closed", "due_on": due},
 			response:    milestone,
 			wantRequest: `PATCH /api/v1/repos/o/r/milestones/42 {"title":"","description":null,"state":"closed","due_on":"` + due + `"}`,
 			wantResult:  slimMilestone,

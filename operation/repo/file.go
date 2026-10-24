@@ -53,7 +53,7 @@ var (
 		tool.String("path", tool.Default("/"), tool.Description(params.PathDesc)),
 		tool.String("ref", tool.Description("branch, tag, or commit SHA, defaults to the default branch")),
 		tool.String("sha", tool.Description("commit SHA, overrides ref")),
-		tool.Boolean("withLines", tool.Description("return numbered lines")),
+		tool.Boolean("with_lines", tool.Description("return numbered lines")),
 		tool.Number("start_line", tool.Minimum(1)),
 		tool.Number("end_line", tool.Minimum(1)),
 	)
@@ -139,7 +139,7 @@ type getFileContentArgs struct {
 	Ref       string `json:"ref"`
 	SHA       string `json:"sha"`
 	Path      string `json:"path"`
-	WithLines bool   `json:"withLines"`
+	WithLines bool   `json:"with_lines"`
 	StartLine int    `json:"start_line"`
 	EndLine   int    `json:"end_line"`
 }

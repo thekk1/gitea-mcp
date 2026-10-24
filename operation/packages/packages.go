@@ -16,7 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-var Tool = tool.New("packages")
+var Tool = tool.New("package")
 
 const (
 	PackageReadToolName  = "package_read"

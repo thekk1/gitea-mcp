@@ -164,15 +164,15 @@ Cursor 等客户端可使用 stdio 命令：
 | notification_read            | notification | 读取 | 读取通知：列出（可限定仓库）或按 ID 获取会话 |
 | notification_write           | notification | 写入 | 将某条或全部通知标记为已读 |
 | label_read                   | label        | 读取 | 读取仓库或组织标签 |
-| label_write                  | label        | 写入 | 写入标签（仓库或组织）：创建、编辑、删除 |
+| label_write                  | label        | 写入 | 写入标签（仓库或组织）：创建、更新、删除 |
 | milestone_read               | milestone    | 读取 | 读取里程碑：获取单个或列出 |
 | milestone_write              | milestone    | 写入 | 写入里程碑：创建、更新、删除 |
 | wiki_read                    | wiki         | 读取 | 读取 Wiki：列出页面、获取内容、修订历史 |
 | wiki_write                   | wiki         | 写入 | 写入 Wiki 页面：创建、更新、删除 |
 | timetracking_read            | timetracking | 读取 | 读取时间跟踪：问题/仓库耗时、活动计时器、我的跟踪记录 |
 | timetracking_write           | timetracking | 写入 | 写入时间跟踪：计时器和记录条目 |
-| package_read                 | packages     | 读取 | 读取软件包注册表：列出软件包、列出版本或获取某个版本 |
-| package_write                | packages     | 写入 | 删除软件包版本（不可恢复） |
+| package_read                 | package      | 读取 | 读取软件包注册表：列出软件包、列出版本或获取某个版本 |
+| package_write                | package      | 写入 | 删除软件包版本（不可恢复） |
 | project_read                 | project      | 读取 | 读取项目、列及列中的议题 |
 | project_write                | project      | 写入 | 写入项目、列及议题所在列 |
 | list_issues                  | issue        | 读取 | 列出仓库问题 |

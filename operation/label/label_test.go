@@ -64,7 +64,7 @@ func TestLabelRequestsAndSlimResults(t *testing.T) {
 		},
 		{
 			handler:     labelWriteFn,
-			args:        map[string]any{"method": "edit_repo_label", "owner": "o", "repo": "r", "id": 7.0, "name": "defect", "description": "", "exclusive": false, "is_archived": false},
+			args:        map[string]any{"method": "update_repo_label", "owner": "o", "repo": "r", "id": 7.0, "name": "defect", "description": "", "exclusive": false, "is_archived": false},
 			response:    label,
 			wantRequest: `PATCH /api/v1/repos/o/r/labels/7 {"name":"defect","color":null,"description":"","exclusive":false,"is_archived":false}`,
 			wantResult:  slimLabel,
@@ -84,7 +84,7 @@ func TestLabelRequestsAndSlimResults(t *testing.T) {
 		},
 		{
 			handler:     labelWriteFn,
-			args:        map[string]any{"method": "edit_org_label", "org": "acme", "id": 7.0, "color": "#00ff00", "exclusive": false},
+			args:        map[string]any{"method": "update_org_label", "org": "acme", "id": 7.0, "color": "#00ff00", "exclusive": false},
 			response:    label,
 			wantRequest: `PATCH /api/v1/orgs/acme/labels/7 {"name":null,"color":"#00ff00","description":null,"exclusive":false}`,
 			wantResult:  slimLabel,

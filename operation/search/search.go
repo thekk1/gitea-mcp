@@ -41,7 +41,7 @@ var (
 		annotation.ReadOnly("Search organization teams"),
 		tool.String("org", tool.Required()),
 		tool.String("query", tool.Required()),
-		tool.Boolean("includeDescription"),
+		tool.Boolean("include_description"),
 		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
 		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
 	)
@@ -51,11 +51,11 @@ var (
 		"Search for repositories by keyword, with filters for topic/description matching, owner, visibility, archived status, and sort order.",
 		annotation.ReadOnly("Search repositories"),
 		tool.String("query", tool.Required()),
-		tool.Boolean("keywordIsTopic"),
-		tool.Boolean("keywordInDescription"),
-		tool.Number("ownerID"),
-		tool.Boolean("isPrivate"),
-		tool.Boolean("isArchived"),
+		tool.Boolean("keyword_is_topic"),
+		tool.Boolean("keyword_in_description"),
+		tool.Number("owner_id"),
+		tool.Boolean("is_private"),
+		tool.Boolean("is_archived"),
 		tool.String("sort"),
 		tool.String("order"),
 		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
@@ -126,7 +126,7 @@ func OrgTeamsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, 
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	includeDescription, _ := args["includeDescription"].(bool)
+	includeDescription, _ := args["include_description"].(bool)
 	page, pageSize := params.GetPagination(args, 30)
 	opt := gitea_sdk.SearchTeamsOptions{
 		Query:              query,
@@ -150,8 +150,8 @@ func ReposFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, err
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	keywordIsTopic, _ := args["keywordIsTopic"].(bool)
-	keywordInDescription, _ := args["keywordInDescription"].(bool)
+	keywordIsTopic, _ := args["keyword_is_topic"].(bool)
+	keywordInDescription, _ := args["keyword_in_description"].(bool)
 	sort, _ := args["sort"].(string)
 	order, _ := args["order"].(string)
 	page, pageSize := params.GetPagination(args, 30)
@@ -159,9 +159,9 @@ func ReposFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, err
 		Keyword:              keyword,
 		KeywordIsTopic:       keywordIsTopic,
 		KeywordInDescription: keywordInDescription,
-		OwnerID:              params.GetOptionalInt(args, "ownerID", 0),
-		IsPrivate:            params.GetOptionalBoolPtr(args, "isPrivate"),
-		IsArchived:           params.GetOptionalBoolPtr(args, "isArchived"),
+		OwnerID:              params.GetOptionalInt(args, "owner_id", 0),
+		IsPrivate:            params.GetOptionalBoolPtr(args, "is_private"),
+		IsArchived:           params.GetOptionalBoolPtr(args, "is_archived"),
 		Sort:                 sort,
 		Order:                order,
 		Page:                 page,

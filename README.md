@@ -164,15 +164,15 @@ Once configured, try `list all my repositories` in the chat box.
 | notification_read            | notification | Read   | Read notifications: list (optionally scoped to a repo) or get a thread by ID |
 | notification_write           | notification | Write  | Mark a notification or all notifications as read |
 | label_read                   | label        | Read   | Read repository or organization labels |
-| label_write                  | label        | Write  | Write labels (repo or org): create, edit, delete |
+| label_write                  | label        | Write  | Write labels (repo or org): create, update, delete |
 | milestone_read               | milestone    | Read   | Read milestones: get one or list |
 | milestone_write              | milestone    | Write  | Write milestones: create, update, delete |
 | wiki_read                    | wiki         | Read   | Read wiki: list pages, get content, revision history |
 | wiki_write                   | wiki         | Write  | Write wiki pages: create, update, delete |
 | timetracking_read            | timetracking | Read   | Read time tracking: issue/repo times, active stopwatches, your tracked times |
 | timetracking_write           | timetracking | Write  | Write time tracking: stopwatches and entries |
-| package_read                 | packages     | Read   | Read package registry: list packages, list versions, or get a version |
-| package_write                | packages     | Write  | Delete a package version (irreversible) |
+| package_read                 | package      | Read   | Read package registry: list packages, list versions, or get a version |
+| package_write                | package      | Write  | Delete a package version (irreversible) |
 | project_read                 | project      | Read   | Read projects, columns and column issues |
 | project_write                | project      | Write  | Write projects, columns and issue placement |
 | list_issues                  | issue        | Read   | List repository issues |

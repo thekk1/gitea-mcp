@@ -30,7 +30,7 @@ var (
 		tool.String("method", tool.Required(), tool.Enum("list", "get", "get_revisions")),
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("pageName", tool.Description("for 'get'/'get_revisions'")),
+		tool.String("page_name", tool.Description("for 'get'/'get_revisions'")),
 	)
 
 	WikiWriteTool = tool.NewDefinition(
@@ -40,7 +40,7 @@ var (
 		tool.String("method", tool.Required(), tool.Enum("create", "update", "delete")),
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("pageName", tool.Description("for 'update'/'delete'")),
+		tool.String("page_name", tool.Description("for 'update'/'delete'")),
 		tool.String("title", tool.Description("for 'create'")),
 		tool.String("content", tool.Description("for 'create'/'update'")),
 		tool.String("message", tool.Description("commit message")),
@@ -120,7 +120,7 @@ func getWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolResul
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	pageName, err := params.GetString(args, "pageName")
+	pageName, err := params.GetString(args, "page_name")
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -143,7 +143,7 @@ func getWikiRevisionsFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	pageName, err := params.GetString(args, "pageName")
+	pageName, err := params.GetString(args, "page_name")
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -204,7 +204,7 @@ func updateWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	pageName, err := params.GetString(args, "pageName")
+	pageName, err := params.GetString(args, "page_name")
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -248,7 +248,7 @@ func deleteWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	pageName, err := params.GetString(args, "pageName")
+	pageName, err := params.GetString(args, "page_name")
 	if err != nil {
 		return to.ErrorResult(err)
 	}

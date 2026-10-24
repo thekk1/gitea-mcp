@@ -231,7 +231,7 @@ func TestGetFileContentFn(t *testing.T) {
 		},
 		{
 			name: "numbered lines",
-			args: map[string]any{"path": "a.txt", "withLines": true},
+			args: map[string]any{"path": "a.txt", "with_lines": true},
 			want: map[string]any{"content": `[
   {
     "line": 1,

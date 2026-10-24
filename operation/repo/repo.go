@@ -41,7 +41,7 @@ var (
 		tool.String("default_branch"),
 		tool.String("trust_model", tool.Enum("default", "collaborator", "committer", "collaboratorcommitter")),
 		tool.String("object_format_name", tool.Enum("sha1", "sha256")),
-		tool.String("organization", tool.Description("defaults to personal account")),
+		tool.String("org", tool.Description("defaults to personal account")),
 	)
 
 	ForkRepoTool = tool.NewDefinition(
@@ -50,7 +50,7 @@ var (
 		annotation.Write("Fork a repository"),
 		tool.String("user", tool.Required(), tool.Description("owner of source repo")),
 		tool.String("repo", tool.Required()),
-		tool.String("organization", tool.Description("target org")),
+		tool.String("org", tool.Description("target org")),
 		tool.String("name", tool.Description("fork name")),
 	)
 
@@ -107,7 +107,7 @@ func CreateRepoFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	defaultBranch, _ := args["default_branch"].(string)
 	trustModel, _ := args["trust_model"].(string)
 	objectFormatName, _ := args["object_format_name"].(string)
-	organization, _ := args["organization"].(string)
+	organization, _ := args["org"].(string)
 
 	opt := gitea_sdk.CreateRepoOption{
 		Name:             name,
@@ -153,7 +153,7 @@ func ForkRepoFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, 
 		return to.ErrorResult(err)
 	}
 	opt := gitea_sdk.CreateForkOption{
-		Organization: params.GetOptionalStringPtr(args, "organization"),
+		Organization: params.GetOptionalStringPtr(args, "org"),
 		Name:         params.GetOptionalStringPtr(args, "name"),
 	}
 	client, err := gitea.ClientFromContext(ctx)

@@ -164,15 +164,15 @@ Cursor 等客戶端可使用 stdio 命令：
 | notification_read            | notification | 讀取 | 讀取通知：列出（可限定倉庫）或依 ID 取得會話 |
 | notification_write           | notification | 寫入 | 將某條或全部通知標記為已讀 |
 | label_read                   | label        | 讀取 | 讀取倉庫或組織標籤 |
-| label_write                  | label        | 寫入 | 寫入標籤（倉庫或組織）：創建、編輯、刪除 |
+| label_write                  | label        | 寫入 | 寫入標籤（倉庫或組織）：創建、更新、刪除 |
 | milestone_read               | milestone    | 讀取 | 讀取里程碑：取得單個或列出 |
 | milestone_write              | milestone    | 寫入 | 寫入里程碑：創建、更新、刪除 |
 | wiki_read                    | wiki         | 讀取 | 讀取 Wiki：列出頁面、取得內容、修訂歷史 |
 | wiki_write                   | wiki         | 寫入 | 寫入 Wiki 頁面：創建、更新、刪除 |
 | timetracking_read            | timetracking | 讀取 | 讀取時間追蹤：問題/倉庫耗時、活動計時器、我的追蹤記錄 |
 | timetracking_write           | timetracking | 寫入 | 寫入時間追蹤：計時器和記錄項目 |
-| package_read                 | packages     | 讀取 | 讀取軟體套件註冊表：列出套件、列出版本或取得某個版本 |
-| package_write                | packages     | 寫入 | 刪除軟體套件版本（不可復原） |
+| package_read                 | package      | 讀取 | 讀取軟體套件註冊表：列出套件、列出版本或取得某個版本 |
+| package_write                | package      | 寫入 | 刪除軟體套件版本（不可復原） |
 | project_read                 | project      | 讀取 | 讀取專案、欄及欄中的議題 |
 | project_write                | project      | 寫入 | 寫入專案、欄及議題所在欄 |
 | list_issues                  | issue        | 讀取 | 列出倉庫問題 |

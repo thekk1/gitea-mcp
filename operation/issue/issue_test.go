@@ -383,7 +383,7 @@ func Test_issueDependencyMethods(t *testing.T) {
 	}
 }
 
-func Test_issueWriteFn_editCommentID(t *testing.T) {
+func Test_issueWriteFn_updateComment(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/version":
@@ -398,13 +398,13 @@ func Test_issueWriteFn_editCommentID(t *testing.T) {
 	defer func(host string) { flag.Host = host }(flag.Host)
 	flag.Host = server.URL
 
-	for _, key := range []string{"comment_id", "commentID"} {
-		t.Run(key, func(t *testing.T) {
-			res, err := issueWriteFn(context.Background(), map[string]any{"method": "edit_comment", "owner": "octo", "repo": "demo", key: float64(42), "body": "new"})
-			if err != nil || res.IsError {
-				t.Fatalf("issueWriteFn() result = %v, error = %v", res, err)
-			}
-		})
+	res, err := issueWriteFn(context.Background(), map[string]any{"method": "update_comment", "owner": "octo", "repo": "demo", "comment_id": float64(42), "body": "new"})
+	if err != nil || res.IsError {
+		t.Fatalf("issueWriteFn() result = %v, error = %v", res, err)
+	}
+	res, _ = issueWriteFn(context.Background(), map[string]any{"method": "update_comment", "owner": "octo", "repo": "demo", "commentID": float64(42), "body": "new"})
+	if !res.IsError {
+		t.Fatal("removed commentID alias must be rejected")
 	}
 }
 
