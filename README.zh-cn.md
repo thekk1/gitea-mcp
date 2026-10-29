@@ -176,6 +176,7 @@ Cursor 等客户端可使用 stdio 命令：
 | project_read                 | project      | 读取 | 读取项目、列及列中的议题 |
 | project_write                | project      | 写入 | 写入项目、列及议题所在列 |
 | list_issues                  | issue        | 读取 | 列出仓库问题 |
+| issue_check_list             | issue        | 读取 | 用一次调用将列表与仓库所有问题比对 |
 | attachment_read              | issue        | 读取 | 读取问题/评论附件：列出元数据、获取元数据或下载内容 |
 | issue_read                   | issue        | 读取 | 读取问题：详情、评论、标签、依赖或可指派用户 |
 | issue_write                  | issue        | 写入 | 写入问题：创建、更新、管理评论、标签和依赖 |
