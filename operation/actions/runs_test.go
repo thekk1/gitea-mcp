@@ -45,7 +45,7 @@ func TestRunWriteJobControlMethods(t *testing.T) {
 			var gotRequest string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/api/v1/version" {
-					_, _ = w.Write([]byte(`{"version":"1.28.0"}`))
+					_, _ = w.Write([]byte(`{"version":"28.0.0"}`))
 					return
 				}
 				gotRequest = r.Method + " " + r.URL.Path

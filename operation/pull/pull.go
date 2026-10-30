@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -896,52 +897,36 @@ func mergePullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	}
 
 	mergeStyle := params.GetOptionalString(args, "merge_style", "merge")
-	title, _ := args["title"].(string)
-	message, _ := args["message"].(string)
 	deleteBranch, _ := args["delete_branch"].(bool)
+	forceMerge, _ := args["force_merge"].(bool)
+	mergeWhenChecksSucceed, _ := args["merge_when_checks_succeed"].(bool)
 
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-
-	forceMerge, _ := args["force_merge"].(bool)
-	mergeWhenChecksSucceed, _ := args["merge_when_checks_succeed"].(bool)
-	headCommitID, _ := args["head_commit_id"].(string)
-	deleteBranchAfterMerge := &deleteBranch
-
-	opt := gitea_sdk.MergePullRequestOption{
+	_, resp, err := client.PullRequests.MergePullRequest(ctx, owner, repo, index, gitea_sdk.MergePullRequestOption{
 		Style:                  gitea_sdk.MergeStyle(mergeStyle),
-		Title:                  title,
-		Message:                message,
-		DeleteBranchAfterMerge: deleteBranchAfterMerge,
+		Title:                  params.GetOptionalString(args, "title", ""),
+		Message:                params.GetOptionalString(args, "message", ""),
+		DeleteBranchAfterMerge: &deleteBranch,
 		ForceMerge:             forceMerge,
 		MergeWhenChecksSucceed: mergeWhenChecksSucceed,
-		HeadCommitId:           headCommitID,
-	}
-
-	merged, resp, err := client.PullRequests.MergePullRequest(ctx, owner, repo, index, opt)
+		HeadCommitId:           params.GetOptionalString(args, "head_commit_id", ""),
+	})
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("merge %v/%v/pr/%v err: %v", owner, repo, index, err))
 	}
 
-	if !merged && resp != nil && resp.StatusCode >= 400 {
-		return to.ErrorResult(fmt.Errorf("merge %v/%v/pr/%v failed: HTTP %d %s", owner, repo, index, resp.StatusCode, resp.Status))
-	}
-
-	if !merged {
-		return to.ErrorResult(fmt.Errorf("merge %v/%v/pr/%v returned merged=false", owner, repo, index))
-	}
-
-	successMsg := map[string]any{
+	merged := resp.StatusCode == http.StatusOK
+	return to.TextResult(map[string]any{
 		"merged":         merged,
+		"scheduled":      resp.StatusCode == http.StatusCreated, // Gitea queued an auto-merge for merge_when_checks_succeed
 		"pr_index":       index,
 		"repository":     fmt.Sprintf("%s/%s", owner, repo),
 		"merge_style":    mergeStyle,
-		"branch_deleted": deleteBranch,
-	}
-
-	return to.TextResult(successMsg)
+		"branch_deleted": deleteBranch && merged,
+	})
 }
 
 func editPullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
