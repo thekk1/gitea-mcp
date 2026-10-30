@@ -29,16 +29,16 @@ const (
 var IssueCheckListTool = tool.NewDefinition(
 	IssueCheckListToolName,
 	"Check a list of identifiers or search texts (for example ticket keys from another system) against "+
-		"all issues of one repository in one call. Returns which terms occur in an issue title (or body) "+
-		"and which are missing. Use this instead of one search per term or paging through list_issues.",
+		"all issues and pull requests of one repository in one call. Returns which terms occur in a title "+
+		"or body and which are missing. Use this instead of one search per term or paging through list_issues.",
 	annotation.ReadOnly("Check a list against repository issues"),
 	tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 	tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 	tool.String("terms", tool.Required(), tool.Description(
 		"identifiers or search texts, separated by commas or new lines; a JSON array of strings is accepted too")),
 	tool.String("state", tool.Enum("open", "closed", "all"), tool.Default("all")),
-	tool.String("type", tool.Enum("issues", "pulls", "all"), tool.Default("issues")),
-	tool.String("match_in", tool.Enum("title", "title_body"), tool.Default("title")),
+	tool.String("type", tool.Enum("issues", "pulls", "all"), tool.Default("all")),
+	tool.String("match_in", tool.Enum("title", "title_body"), tool.Default("title_body")),
 	tool.Boolean("only_missing", tool.Description("return only the missing terms, not the matching issues")),
 )
 
@@ -88,6 +88,7 @@ func termPattern(term string) *regexp.Regexp {
 
 type checkListHit struct {
 	Number int64  `json:"number"`
+	Kind   string `json:"kind"`
 	State  string `json:"state"`
 	Title  string `json:"title"`
 }
@@ -109,11 +110,11 @@ func issueCheckListFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 		return to.ErrorResult(fmt.Errorf("at most %d terms per call, got %d", checkListMaxTerms, len(terms)))
 	}
 	state := params.GetOptionalString(args, "state", "all")
-	matchBody := params.GetOptionalString(args, "match_in", "title") == "title_body"
+	matchBody := params.GetOptionalString(args, "match_in", "title_body") == "title_body"
 	onlyMissing, _ := args["only_missing"].(bool)
 
 	opt := gitea_sdk.ListIssueOption{State: gitea_sdk.StateType(state)}
-	switch params.GetOptionalString(args, "type", "issues") {
+	switch params.GetOptionalString(args, "type", "all") {
 	case "issues":
 		opt.Type = gitea_sdk.IssueTypeIssue
 	case "pulls":
@@ -147,7 +148,11 @@ func issueCheckListFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 					if r := []rune(title); len(r) > checkListTitleChars {
 						title = string(r[:checkListTitleChars]) + "…"
 					}
-					hits[i] = append(hits[i], checkListHit{Number: issue.Index, State: string(issue.State), Title: title})
+					kind := "issue"
+					if issue.PullRequest != nil {
+						kind = "pull"
+					}
+					hits[i] = append(hits[i], checkListHit{Number: issue.Index, Kind: kind, State: string(issue.State), Title: title})
 				}
 			}
 		}
