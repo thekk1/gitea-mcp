@@ -3,7 +3,9 @@ package wiki
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 
 	"gitea.com/gitea/gitea-mcp/internal/annotation"
@@ -79,7 +81,7 @@ func listWikiPagesFn(ctx context.Context, args map[string]any) (*mcp.CallToolRes
 	var result any
 	_, err = gitea.DoJSON(ctx, "GET", fmt.Sprintf("repos/%s/%s/wiki/pages", url.PathEscape(owner), url.PathEscape(repo)), nil, nil, &result)
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("list wiki pages err: %v", err))
+		return to.ErrorResult(wikiError("list wiki pages", err))
 	}
 
 	return to.TextResult(result)
@@ -99,13 +101,13 @@ func getWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolResul
 		return to.ErrorResult(err)
 	}
 
-	var result any
+	var result map[string]any
 	_, err = gitea.DoJSON(ctx, "GET", fmt.Sprintf("repos/%s/%s/wiki/page/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(pageName)), nil, nil, &result)
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get wiki page err: %v", err))
+		return to.ErrorResult(wikiError("get wiki page", err))
 	}
 
-	return to.TextResult(result)
+	return to.TextResult(decodeWikiPage(result))
 }
 
 func getWikiRevisionsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -125,7 +127,7 @@ func getWikiRevisionsFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	var result any
 	_, err = gitea.DoJSON(ctx, "GET", fmt.Sprintf("repos/%s/%s/wiki/revisions/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(pageName)), nil, nil, &result)
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get wiki revisions err: %v", err))
+		return to.ErrorResult(wikiError("get wiki revisions", err))
 	}
 
 	return to.TextResult(result)
@@ -160,13 +162,13 @@ func createWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 		"message":        message,
 	}
 
-	var result any
+	var result map[string]any
 	_, err = gitea.DoJSON(ctx, "POST", fmt.Sprintf("repos/%s/%s/wiki/new", url.PathEscape(owner), url.PathEscape(repo)), nil, requestBody, &result)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("create wiki page err: %v", err))
 	}
 
-	return to.TextResult(result)
+	return to.TextResult(decodeWikiPage(result))
 }
 
 func updateWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -204,13 +206,13 @@ func updateWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 		requestBody["message"] = fmt.Sprintf("Update wiki page '%s'", pageName)
 	}
 
-	var result any
+	var result map[string]any
 	_, err = gitea.DoJSON(ctx, "PATCH", fmt.Sprintf("repos/%s/%s/wiki/page/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(pageName)), nil, requestBody, &result)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("update wiki page err: %v", err))
 	}
 
-	return to.TextResult(result)
+	return to.TextResult(decodeWikiPage(result))
 }
 
 func deleteWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -233,4 +235,25 @@ func deleteWikiPageFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	}
 
 	return to.TextResult(map[string]string{"message": "Wiki page deleted successfully"})
+}
+
+// decodeWikiPage decodes Gitea's base64 page fields, models read plain text far more reliably.
+func decodeWikiPage(page map[string]any) map[string]any {
+	for encodedKey, key := range map[string]string{"content_base64": "content", "sidebar": "sidebar", "footer": "footer"} {
+		if encoded, ok := page[encodedKey].(string); ok {
+			if decoded, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+				delete(page, encodedKey)
+				page[key] = string(decoded)
+			}
+		}
+	}
+	return page
+}
+
+// wikiError lists the causes of a 404, Gitea's body is identical for all of them.
+func wikiError(action string, err error) error {
+	if httpErr, ok := errors.AsType[*gitea.HTTPError](err); ok && httpErr.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("%s err: %v (the repository may not exist or be inaccessible, its wiki may be disabled or empty, or the page may not exist)", action, err)
+	}
+	return fmt.Errorf("%s err: %v", action, err)
 }
