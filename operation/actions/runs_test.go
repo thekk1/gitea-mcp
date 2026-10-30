@@ -4,9 +4,12 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"gitea.com/gitea/gitea-mcp/internal/flag"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestListRepoActionRunsForwardsFilters(t *testing.T) {
@@ -25,6 +28,30 @@ func TestListRepoActionRunsForwardsFilters(t *testing.T) {
 	}
 	if want := "/api/v1/repos/o/r/actions/runs?branch=main&head_sha=abc123&limit=30&page=1"; result.IsError || gotRequest != want {
 		t.Errorf("request %q, isError %v, want %q", gotRequest, result.IsError, want)
+	}
+}
+
+func TestJobLogErrorKeepsGiteaReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/o/r/actions/jobs/21/logs" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, `{"message":"job not started"}`, http.StatusNotFound)
+	}))
+	defer server.Close()
+	defer func(host string) { flag.Host = host }(flag.Host)
+	flag.Host = server.URL
+
+	for _, method := range []string{"get_job_log_preview", "download_job_log"} {
+		result, err := Tool.ReadTools()[1].Handler(t.Context(), map[string]any{"method": method, "owner": "o", "repo": "r", "job_id": float64(21)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := result.Content[0].(*mcp.TextContent).Text
+		if !result.IsError || !strings.Contains(text, "o/r/job/21") || !strings.Contains(text, "job not started") {
+			t.Errorf("%s: result %q, want the job and Gitea's reason", method, text)
+		}
 	}
 }
 

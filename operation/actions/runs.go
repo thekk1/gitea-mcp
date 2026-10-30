@@ -525,30 +525,9 @@ func getRepoActionJobFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	return to.TextResult(slimActionJob(result))
 }
 
-func logPaths(owner, repo string, jobID int64) []string {
-	return []string{
-		fmt.Sprintf("repos/%s/%s/actions/jobs/%d/logs", url.PathEscape(owner), url.PathEscape(repo), jobID),
-		fmt.Sprintf("repos/%s/%s/actions/jobs/%d/log", url.PathEscape(owner), url.PathEscape(repo), jobID),
-		fmt.Sprintf("repos/%s/%s/actions/tasks/%d/log", url.PathEscape(owner), url.PathEscape(repo), jobID),
-		fmt.Sprintf("repos/%s/%s/actions/task/%d/log", url.PathEscape(owner), url.PathEscape(repo), jobID),
-	}
-}
-
-func fetchJobLogBytes(ctx context.Context, owner, repo string, jobID int64) ([]byte, string, error) {
-	var lastErr error
-	for _, p := range logPaths(owner, repo, jobID) {
-		b, _, err := gitea.DoBytes(ctx, "GET", p, nil, nil, "text/plain")
-		if err == nil {
-			return b, p, nil
-		}
-		lastErr = err
-		var httpErr *gitea.HTTPError
-		if errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusNotFound || httpErr.StatusCode == http.StatusMethodNotAllowed) {
-			continue
-		}
-		return nil, p, err
-	}
-	return nil, "", lastErr
+func fetchJobLogBytes(ctx context.Context, owner, repo string, jobID int64) ([]byte, error) {
+	logBytes, _, err := gitea.DoBytes(ctx, "GET", fmt.Sprintf("repos/%s/%s/actions/jobs/%d/logs", url.PathEscape(owner), url.PathEscape(repo), jobID), nil, nil, "text/plain")
+	return logBytes, err
 }
 
 func tailByLines(data []byte, tailLines int) []byte {
@@ -594,16 +573,15 @@ func getRepoActionJobLogPreviewFn(ctx context.Context, args map[string]any) (*mc
 	}
 	tailLines := int(params.GetOptionalInt(args, "tail_lines", 200))
 	maxBytes := int(params.GetOptionalInt(args, "max_bytes", 65536))
-	raw, usedPath, err := fetchJobLogBytes(ctx, owner, repo, jobID)
+	raw, err := fetchJobLogBytes(ctx, owner, repo, jobID)
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get job log err: %v", err))
+		return to.ErrorResult(fmt.Errorf("get %v/%v/job/%v log err: %v", owner, repo, jobID, err))
 	}
 
 	tailed := tailByLines(raw, tailLines)
 	limited, truncated := limitBytes(tailed, maxBytes)
 
 	return to.TextResult(map[string]any{
-		"endpoint":   usedPath,
 		"job_id":     jobID,
 		"bytes":      len(raw),
 		"tail_lines": tailLines,
@@ -628,9 +606,9 @@ func downloadRepoActionJobLogFn(ctx context.Context, args map[string]any) (*mcp.
 	}
 	outputPath, _ := args["output_path"].(string)
 
-	raw, usedPath, err := fetchJobLogBytes(ctx, owner, repo, jobID)
+	raw, err := fetchJobLogBytes(ctx, owner, repo, jobID)
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("download job log err: %v", err))
+		return to.ErrorResult(fmt.Errorf("download %v/%v/job/%v log err: %v", owner, repo, jobID, err))
 	}
 
 	if outputPath == "" {
@@ -649,9 +627,8 @@ func downloadRepoActionJobLogFn(ctx context.Context, args map[string]any) (*mcp.
 	}
 
 	return to.TextResult(map[string]any{
-		"endpoint": usedPath,
-		"job_id":   jobID,
-		"path":     outputPath,
-		"bytes":    len(raw),
+		"job_id": jobID,
+		"path":   outputPath,
+		"bytes":  len(raw),
 	})
 }
