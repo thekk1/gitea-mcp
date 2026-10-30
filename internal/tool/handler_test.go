@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"gitea.com/gitea/gitea-mcp/internal/flag"
+
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -121,5 +123,33 @@ func assertProtocolErrorCode(t *testing.T, err error, want int64) {
 	}
 	if protocolErr.Code != want {
 		t.Errorf("error code = %d, want %d", protocolErr.Code, want)
+	}
+}
+
+func TestMCPHandlerRejectsOutputPathOverHTTP(t *testing.T) {
+	defer func(mode string) { flag.Mode = mode }(flag.Mode)
+	for _, tc := range []struct {
+		mode, arguments string
+		wantError       bool
+	}{
+		{"http", `{"output_path":"/tmp/out"}`, true},
+		{"http", `{}`, false},
+		{"stdio", `{"output_path":"/tmp/out"}`, false},
+	} {
+		flag.Mode = tc.mode
+		result, err := callTool(okHandler, json.RawMessage(tc.arguments))
+		if err != nil || result.IsError != tc.wantError {
+			t.Errorf("%s %s: result = %v, error = %v, want IsError %v", tc.mode, tc.arguments, result, err, tc.wantError)
+		}
+	}
+}
+
+func TestDispatch(t *testing.T) {
+	handler := Dispatch(map[string]Handler{"get": okHandler})
+	for method, wantError := range map[any]bool{"get": false, "list": true, "": true, nil: true, 1: true} {
+		result, err := handler(context.Background(), map[string]any{"method": method})
+		if err != nil || result.IsError != wantError {
+			t.Errorf("method %v: result = %v, error = %v, want IsError %v", method, result, err, wantError)
+		}
 	}
 }

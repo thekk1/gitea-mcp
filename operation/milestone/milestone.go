@@ -24,25 +24,25 @@ const (
 var (
 	MilestoneReadTool = tool.NewDefinition(
 		MilestoneReadToolName,
-		"Read milestones: get one or list.",
+		"Read milestones.",
 		annotation.ReadOnly("Read milestones"),
 		tool.String("method", tool.Required(), tool.Enum("get", "list")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.Number("id", tool.Description("for 'get'")),
 		tool.String("state", tool.Default("all")),
 		tool.String("name", tool.Description("name filter (for 'list')")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	MilestoneWriteTool = tool.NewDefinition(
 		MilestoneWriteToolName,
-		"Write milestones: create, update, delete.",
+		"Write milestones.",
 		annotation.Destructive("Create, update, or delete milestones"),
 		tool.String("method", tool.Required(), tool.Enum("create", "update", "delete")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.Number("id", tool.Description("for 'update'/'delete'")),
 		tool.String("title", tool.Description("for 'create'")),
 		tool.String("description"),
@@ -53,45 +53,20 @@ var (
 
 func init() {
 	Tool.RegisterRead(tool.ServerTool{
-		Tool:    MilestoneReadTool,
-		Handler: milestoneReadFn,
+		Tool: MilestoneReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"get":  getMilestoneFn,
+			"list": listMilestonesFn,
+		}),
 	})
 	Tool.RegisterWrite(tool.ServerTool{
-		Tool:    MilestoneWriteTool,
-		Handler: milestoneWriteFn,
+		Tool: MilestoneWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create": createMilestoneFn,
+			"update": editMilestoneFn,
+			"delete": deleteMilestoneFn,
+		}),
 	})
-}
-
-func milestoneReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "get":
-		return getMilestoneFn(ctx, args)
-	case "list":
-		return listMilestonesFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func milestoneWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "create":
-		return createMilestoneFn(ctx, args)
-	case "update":
-		return editMilestoneFn(ctx, args)
-	case "delete":
-		return deleteMilestoneFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
 }
 
 func getMilestoneFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

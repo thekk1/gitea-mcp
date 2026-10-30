@@ -2,10 +2,11 @@ package pull
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
-	"time"
 
 	"gitea.com/gitea/gitea-mcp/internal/annotation"
 	"gitea.com/gitea/gitea-mcp/internal/gitea"
@@ -22,10 +23,6 @@ import (
 
 var Tool = tool.New("pull_request")
 
-var statusPollInterval = 5 * time.Second
-
-const maxStatusWaitSeconds = 45 // stays under the 60s default request timeout of common MCP clients
-
 const (
 	ListRepoPullRequestsToolName   = "list_pull_requests"
 	PullRequestReadToolName        = "pull_request_read"
@@ -36,42 +33,43 @@ const (
 var (
 	ListRepoPullRequestsTool = tool.NewDefinition(
 		ListRepoPullRequestsToolName,
-		"List pull requests in a repository, filterable by state and milestone, with configurable sort order (e.g. recently updated, most commented).",
+		"List repository pull requests, filterable by state and milestone.",
 		annotation.ReadOnly("List pull requests"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("state", tool.Enum("open", "closed", "all"), tool.Default("all")),
 		tool.String("sort", tool.Enum("oldest", "recentupdate", "leastupdate", "mostcomment", "leastcomment", "priority"), tool.Default("recentupdate")),
 		tool.Number("milestone"),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	PullRequestReadTool = tool.NewDefinition(
 		PullRequestReadToolName,
-		"Read pull request: details, diff, changed files, commits, head commit status, reviews, review comments, discussion comments. Also find the PR for a branch pair or commit, and list who can be asked to review.",
+		"Read a pull request with its diff, files, commits, status, reviews, inline review comments and discussion comments, list reviewer candidates, or find one by branches or commit.",
 		annotation.ReadOnly("Read pull request details"),
 		tool.String("method", tool.Required(), tool.Enum("get", "get_diff", "get_files", "get_commits", "get_status", "get_reviews", "get_review", "get_review_comments", "get_comments", "get_by_branches", "get_by_commit", "get_reviewer_candidates")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.Number("pull_number", tool.Description("required except for 'get_by_branches'/'get_by_commit'/'get_reviewer_candidates'")),
 		tool.String("base", tool.Description("base branch (for 'get_by_branches')")),
 		tool.String("head", tool.Description("head branch (for 'get_by_branches')")),
 		tool.String("sha", tool.Description("commit SHA (for 'get_by_commit')")),
 		tool.Number("review_id", tool.Description("for 'get_review'; optional for 'get_review_comments', omit to list all")),
-		tool.Number("wait_seconds", tool.Description(fmt.Sprintf("for 'get_status': seconds to wait while pending, max %d", maxStatusWaitSeconds))),
+		tool.Number("wait_seconds", tool.Description(fmt.Sprintf("for 'get_status': seconds to wait while pending, max %d", gitea.MaxStatusWaitSeconds))),
 		tool.Boolean("binary", tool.Description("include binary diff")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.String("path", tool.Description("for 'get_diff': only this file's diff")),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	PullRequestWriteTool = tool.NewDefinition(
 		PullRequestWriteToolName,
-		"Write pull requests: create, update, close, reopen, merge, update branch from base, manage reviewers.",
+		"Create, update, merge, close or reopen pull requests, update their branch from base, manage reviewers.",
 		annotation.Write("Create, update, close, reopen, or merge pull requests"),
 		tool.String("method", tool.Required(), tool.Enum("create", "update", "close", "reopen", "merge", "update_branch", "add_reviewers", "remove_reviewers")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.Number("pull_number", tool.Description("required except for 'create'")),
 		tool.String("title", tool.Description("required for 'create'; optional for 'update'/'merge'")),
 		tool.String("body"),
@@ -98,11 +96,11 @@ var (
 
 	PullRequestReviewWriteTool = tool.NewDefinition(
 		PullRequestReviewWriteToolName,
-		"Write PR reviews: create, submit, delete, dismiss, reply to and resolve review comments.",
+		"Create, submit, delete or dismiss pull request reviews, reply to and resolve review comments.",
 		annotation.Write("Write pull request reviews"),
 		tool.String("method", tool.Required(), tool.Enum("create", "submit", "delete", "dismiss", "reply_comment", "resolve_thread", "unresolve_thread")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.Number("pull_number", tool.Description("required except for 'resolve_thread'/'unresolve_thread'")),
 		tool.Number("review_id", tool.Description("for 'submit'/'delete'/'dismiss'")),
 		tool.Number("comment_id", tool.Description("comment ID from 'get_review_comments'; resolve takes the thread's first")),
@@ -128,79 +126,49 @@ func init() {
 		Handler: listRepoPullRequestsFn,
 	})
 	Tool.RegisterRead(tool.ServerTool{
-		Tool:    PullRequestReadTool,
-		Handler: pullRequestReadFn,
+		Tool: PullRequestReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"get":                 getPullRequestByIndexFn,
+			"get_diff":            getPullRequestDiffFn,
+			"get_files":           getPullRequestFilesFn,
+			"get_commits":         listPullRequestCommitsFn,
+			"get_status":          getPullRequestStatusFn,
+			"get_reviews":         listPullRequestReviewsFn,
+			"get_review":          getPullRequestReviewFn,
+			"get_review_comments": listPullRequestReviewCommentsFn,
+			"get_comments": func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+				return issue.ListComments(ctx, args, "pull_number")
+			},
+			"get_by_branches":         getPullRequestByBranchesFn,
+			"get_by_commit":           getPullRequestByCommitFn,
+			"get_reviewer_candidates": listReviewerCandidatesFn,
+		}),
 	})
 	Tool.RegisterWrite(tool.ServerTool{
-		Tool:    PullRequestWriteTool,
-		Handler: pullRequestWriteFn,
+		Tool: PullRequestWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create":           createPullRequestFn,
+			"update":           editPullRequestFn,
+			"close":            closePullRequestFn,
+			"reopen":           reopenPullRequestFn,
+			"merge":            mergePullRequestFn,
+			"update_branch":    updatePullRequestBranchFn,
+			"add_reviewers":    createPullRequestReviewerFn,
+			"remove_reviewers": deletePullRequestReviewerFn,
+		}),
 	})
 	Tool.RegisterWrite(tool.ServerTool{
-		Tool:    PullRequestReviewWriteTool,
-		Handler: pullRequestReviewWriteFn,
+		Tool: PullRequestReviewWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create":           createPullRequestReviewFn,
+			"submit":           submitPullRequestReviewFn,
+			"delete":           deletePullRequestReviewFn,
+			"dismiss":          dismissPullRequestReviewFn,
+			"reply_comment":    replyPullRequestReviewCommentFn,
+			"resolve_thread":   resolveReviewThreadFn,
+			"unresolve_thread": unresolveReviewThreadFn,
+		}),
 	})
-}
-
-func pullRequestReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "get":
-		return getPullRequestByIndexFn(ctx, args)
-	case "get_diff":
-		return getPullRequestDiffFn(ctx, args)
-	case "get_files":
-		return getPullRequestFilesFn(ctx, args)
-	case "get_commits":
-		return listPullRequestCommitsFn(ctx, args)
-	case "get_status":
-		return getPullRequestStatusFn(ctx, args)
-	case "get_reviews":
-		return listPullRequestReviewsFn(ctx, args)
-	case "get_review":
-		return getPullRequestReviewFn(ctx, args)
-	case "get_review_comments":
-		return listPullRequestReviewCommentsFn(ctx, args)
-	case "get_comments":
-		return issue.ListComments(ctx, args, "pull_number")
-	case "get_by_branches":
-		return getPullRequestByBranchesFn(ctx, args)
-	case "get_by_commit":
-		return getPullRequestByCommitFn(ctx, args)
-	case "get_reviewer_candidates":
-		return listReviewerCandidatesFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func pullRequestWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "create":
-		return createPullRequestFn(ctx, args)
-	case "update":
-		return editPullRequestFn(ctx, args)
-	case "close":
-		return closePullRequestFn(ctx, args)
-	case "reopen":
-		return reopenPullRequestFn(ctx, args)
-	case "merge":
-		return mergePullRequestFn(ctx, args)
-	case "update_branch":
-		return updatePullRequestBranchFn(ctx, args)
-	case "add_reviewers":
-		return createPullRequestReviewerFn(ctx, args)
-	case "remove_reviewers":
-		return deletePullRequestReviewerFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
 }
 
 func closePullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -263,31 +231,6 @@ func reopenPullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallToo
 	return to.TextResult(slimPullRequest(pr))
 }
 
-func pullRequestReviewWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "create":
-		return createPullRequestReviewFn(ctx, args)
-	case "submit":
-		return submitPullRequestReviewFn(ctx, args)
-	case "delete":
-		return deletePullRequestReviewFn(ctx, args)
-	case "dismiss":
-		return dismissPullRequestReviewFn(ctx, args)
-	case "reply_comment":
-		return replyPullRequestReviewCommentFn(ctx, args)
-	case "resolve_thread":
-		return resolveReviewThreadFn(ctx, args)
-	case "unresolve_thread":
-		return unresolveReviewThreadFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
 func getPullRequestByIndexFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	owner, err := params.GetString(args, "owner")
 	if err != nil {
@@ -336,20 +279,66 @@ func getPullRequestDiffFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	binary, _ := args["binary"].(bool)
-
-	client, err := gitea.ClientFromContext(ctx)
-	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	query := url.Values{}
+	if binary, _ := args["binary"].(bool); binary {
+		query.Set("binary", "true") // the SDK drops this option
 	}
-	diffBytes, _, err := client.PullRequests.GetPullRequestDiff(ctx, owner, repo, index, gitea_sdk.PullRequestDiffOptions{
-		Binary: binary,
-	})
+	diffBytes, _, err := gitea.DoBytes(ctx, "GET", fmt.Sprintf("repos/%s/%s/pulls/%d.diff", url.PathEscape(owner), url.PathEscape(repo), index), query, nil, "")
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get %v/%v/pr/%v diff err: %v", owner, repo, index, err))
 	}
+	diff := string(diffBytes)
+	if path := params.GetOptionalString(args, "path", ""); path != "" {
+		if diff = diffFileSection(diff, path); diff == "" {
+			return to.ErrorResult(fmt.Errorf("%s is not in the diff", path))
+		}
+	}
+	return to.TextResult(diff)
+}
 
-	return to.TextResult(string(diffBytes))
+// diffFileSection matches the exact header of an unrenamed file or the rename lines, since header paths with spaces are ambiguous.
+func diffFileSection(diff, path string) string {
+	matches := []string{
+		"diff --git " + gitQuotePath("a/"+path) + " " + gitQuotePath("b/"+path) + "\n",
+		"rename from " + gitQuotePath(path) + "\n",
+		"rename to " + gitQuotePath(path) + "\n",
+	}
+	start, offset, matched := 0, 0, false
+	for line := range strings.Lines(diff) {
+		if strings.HasPrefix(line, "diff --git ") {
+			if matched {
+				return diff[start:offset]
+			}
+			start = offset
+		}
+		matched = matched || slices.Contains(matches, line)
+		offset += len(line)
+	}
+	if !matched {
+		return ""
+	}
+	return diff[start:]
+}
+
+// gitQuotePath mirrors git's diff header quoting with core.quotePath=false, which Gitea sets.
+func gitQuotePath(path string) string {
+	if !strings.ContainsFunc(path, func(r rune) bool { return r < 0x20 || r == '"' || r == '\\' || r == 0x7f }) {
+		return path
+	}
+	var quoted strings.Builder
+	quoted.WriteByte('"')
+	for _, char := range []byte(path) {
+		if escape := strings.IndexByte("\a\b\t\n\v\f\r\"\\", char); escape >= 0 {
+			quoted.WriteByte('\\')
+			quoted.WriteByte(`abtnvfr"\`[escape])
+		} else if char < 0x20 || char == 0x7f {
+			fmt.Fprintf(&quoted, "\\%03o", char)
+		} else {
+			quoted.WriteByte(char)
+		}
+	}
+	quoted.WriteByte('"')
+	return quoted.String()
 }
 
 func listRepoPullRequestsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -1190,26 +1179,19 @@ func getPullRequestStatusFn(ctx context.Context, args map[string]any) (*mcp.Call
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	deadline := time.Now().Add(time.Duration(max(0, min(params.GetOptionalInt(args, "wait_seconds", 0), maxStatusWaitSeconds))) * time.Second)
-	for {
+	status, err := gitea.WaitStatus(ctx, params.GetOptionalInt(args, "wait_seconds", 0), func() (*gitea_sdk.CombinedStatus, error) {
 		pr, _, err := client.PullRequests.GetPullRequest(ctx, owner, repo, index)
 		if err != nil {
-			return to.ErrorResult(fmt.Errorf("get %v/%v/pr/%v err: %v", owner, repo, index, err))
+			return nil, err
 		}
 		if pr.Head == nil || pr.Head.Sha == "" {
-			return to.ErrorResult(fmt.Errorf("pr %v/%v/%v has no head SHA", owner, repo, index))
+			return nil, errors.New("pull request has no head SHA")
 		}
 		status, _, err := client.Repositories.GetCombinedStatus(ctx, owner, repo, pr.Head.Sha)
-		if err != nil {
-			return to.ErrorResult(fmt.Errorf("get %v/%v/pr/%v status err: %v", owner, repo, index, err))
-		}
-		if (status.State != "" && status.State != gitea_sdk.StatusPending) || !time.Now().Before(deadline) {
-			return to.TextResult(status)
-		}
-		select {
-		case <-ctx.Done():
-			return to.ErrorResult(ctx.Err())
-		case <-time.After(min(statusPollInterval, time.Until(deadline))):
-		}
+		return status, err
+	})
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get %v/%v/pr/%v status err: %v", owner, repo, index, err))
 	}
+	return to.TextResult(status)
 }

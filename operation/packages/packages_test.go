@@ -42,7 +42,7 @@ func TestPackageReadList(t *testing.T) {
 			"owner":  "test-org",
 		}
 
-		result, err := packageReadFn(ctx, args)
+		result, err := Tool.ReadTools()[0].Handler(ctx, args)
 		if err != nil {
 			t.Fatalf("packageReadFn() error: %v", err)
 		}
@@ -74,7 +74,7 @@ func TestPackageReadList(t *testing.T) {
 			"q":      "myimage",
 		}
 
-		_, err := packageReadFn(ctx, args)
+		_, err := Tool.ReadTools()[0].Handler(ctx, args)
 		if err != nil {
 			t.Fatalf("packageReadFn() error: %v", err)
 		}
@@ -97,7 +97,7 @@ func TestPackageReadList(t *testing.T) {
 			"per_page": float64(10),
 		}
 
-		_, err := packageReadFn(ctx, args)
+		_, err := Tool.ReadTools()[0].Handler(ctx, args)
 		if err != nil {
 			t.Fatalf("packageReadFn() error: %v", err)
 		}
@@ -152,7 +152,7 @@ func TestPackageReadListVersions(t *testing.T) {
 				"name":   tt.name,
 			}
 
-			result, err := packageReadFn(ctx, args)
+			result, err := Tool.ReadTools()[0].Handler(ctx, args)
 			if err != nil {
 				t.Fatalf("packageReadFn() error: %v", err)
 			}
@@ -219,7 +219,7 @@ func TestPackageReadGet(t *testing.T) {
 				"version": "v1.0.0",
 			}
 
-			result, err := packageReadFn(ctx, args)
+			result, err := Tool.ReadTools()[0].Handler(ctx, args)
 			if err != nil {
 				t.Fatalf("packageReadFn() error: %v", err)
 			}
@@ -280,7 +280,7 @@ func TestPackageWriteDelete(t *testing.T) {
 		"version": "v1.0.0",
 	}
 
-	result, err := packageWriteFn(ctx, args)
+	result, err := Tool.WriteTools()[0].Handler(ctx, args)
 	if err != nil {
 		t.Fatalf("packageWriteFn() error: %v", err)
 	}
@@ -296,23 +296,6 @@ func TestPackageWriteDelete(t *testing.T) {
 	wantPath := "/api/v1/packages/test-org/container/myrepo%2Fmyimage/v1.0.0"
 	if gotPath != wantPath {
 		t.Errorf("request path = %q, want %q", gotPath, wantPath)
-	}
-}
-
-func TestPackageUnknownMethod(t *testing.T) {
-	for name, fn := range map[string]func(context.Context, map[string]any) (*mcp.CallToolResult, error){
-		"packageReadFn":  packageReadFn,
-		"packageWriteFn": packageWriteFn,
-	} {
-		t.Run(name, func(t *testing.T) {
-			result, err := fn(context.Background(), map[string]any{"method": "bogus", "owner": "test-org"})
-			if err != nil {
-				t.Fatalf("%s() error = %v", name, err)
-			}
-			if result == nil || !result.IsError {
-				t.Fatalf("%s() result = %#v, want an error result", name, result)
-			}
-		})
 	}
 }
 

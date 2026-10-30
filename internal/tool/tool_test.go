@@ -1,6 +1,7 @@
 package tool
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -223,4 +224,35 @@ func TestWarnUnmatchedAllowedScopes(t *testing.T) {
 		flag.AllowedScopes = map[string]struct{}{"not_a_real_scope": {}}
 		WarnUnmatchedAllowedScopes(repoTool, fileTool)
 	})
+}
+
+func TestToolsDeprecatedAliasRestrictsMethods(t *testing.T) {
+	origAllow := flag.AllowedTools
+	t.Cleanup(func() { flag.AllowedTools = origAllow })
+	flag.AllowedTools = map[string]struct{}{"create_branch": {}, "rename_branch": {}}
+
+	domain := New("branch")
+	domain.RegisterWrite(ServerTool{
+		Tool:    NewDefinition("branch_write", "", nil, String("method", Enum("create", "delete", "rename"))),
+		Handler: Dispatch(map[string]Handler{"create": okHandler, "delete": okHandler, "rename": okHandler}),
+	})
+	domain.RegisterWrite(makeTool("tag_write"))
+	tools := domain.Tools()
+	if len(tools) != 1 {
+		t.Fatalf("Tools() = %v, want only branch_write", names(tools))
+	}
+	enum := tools[0].Tool.InputSchema.(map[string]any)["properties"].(map[string]any)["method"].(map[string]any)["enum"]
+	if !slices.Equal(enum.([]string), []string{"create", "rename"}) {
+		t.Errorf("method enum = %v, want [create rename]", enum)
+	}
+	for method, wantError := range map[string]bool{"create": false, "delete": true, "": true} {
+		result, err := tools[0].Handler(t.Context(), map[string]any{"method": method})
+		if err != nil || result.IsError != wantError {
+			t.Errorf("method %q: result = %v, error = %v, want IsError %v", method, result, err, wantError)
+		}
+	}
+}
+
+func okHandler(_ctx context.Context, _args map[string]any) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{}, nil
 }

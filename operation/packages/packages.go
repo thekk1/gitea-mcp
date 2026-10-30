@@ -26,7 +26,7 @@ const (
 var (
 	PackageReadTool = tool.NewDefinition(
 		PackageReadToolName,
-		"Read package registry: list packages (one entry per version, filter via 'q'/'type'), list versions, or get a version.",
+		"Read the package registry, listing packages returns one entry per version.",
 		annotation.ReadOnly("Read package registry"),
 		tool.String("method", tool.Required(), tool.Enum("list", "list_versions", "get")),
 		tool.String("owner", tool.Required(), tool.Description("user or org")),
@@ -34,8 +34,8 @@ var (
 		tool.String("name", tool.Description("slashes auto-encoded; required except 'list'")),
 		tool.String("version", tool.Description("for 'get'")),
 		tool.String("q", tool.Description("search query")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1), tool.Minimum(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30), tool.Minimum(1)),
+		tool.Number("page", tool.Default(1), tool.Minimum(1)),
+		tool.Number("per_page", tool.Default(30), tool.Minimum(1)),
 	)
 
 	PackageWriteTool = tool.NewDefinition(
@@ -52,43 +52,19 @@ var (
 
 func init() {
 	Tool.RegisterRead(tool.ServerTool{
-		Tool:    PackageReadTool,
-		Handler: packageReadFn,
+		Tool: PackageReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"list":          listPackagesFn,
+			"list_versions": listPackageVersionsFn,
+			"get":           getPackageFn,
+		}),
 	})
 	Tool.RegisterWrite(tool.ServerTool{
-		Tool:    PackageWriteTool,
-		Handler: packageWriteFn,
+		Tool: PackageWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"delete": deletePackageVersionFn,
+		}),
 	})
-}
-
-func packageReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "list":
-		return listPackagesFn(ctx, args)
-	case "list_versions":
-		return listPackageVersionsFn(ctx, args)
-	case "get":
-		return getPackageFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func packageWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "delete":
-		return deletePackageVersionFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
 }
 
 // escapePackageName normalises a package name for use in URL paths. It

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"gitea.com/gitea/gitea-mcp/internal/annotation"
+	"gitea.com/gitea/gitea-mcp/internal/attachment"
 	"gitea.com/gitea/gitea-mcp/internal/gitea"
 	"gitea.com/gitea/gitea-mcp/internal/params"
 	"gitea.com/gitea/gitea-mcp/internal/to"
@@ -18,96 +19,178 @@ import (
 var ReleaseTool = tool.New("release")
 
 const (
-	CreateReleaseToolName    = "create_release"
-	DeleteReleaseToolName    = "delete_release"
-	GetReleaseToolName       = "get_release"
-	GetLatestReleaseToolName = "get_latest_release"
-	ListReleasesToolName     = "list_releases"
+	ReleaseReadToolName  = "release_read"
+	ReleaseWriteToolName = "release_write"
 )
 
 var (
-	CreateReleaseTool = tool.NewDefinition(
-		CreateReleaseToolName,
-		"Create a new release in a repository from a tag, optionally marking it as a draft or pre-release.",
-		annotation.Write("Create a release"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("tag_name", tool.Required()),
-		tool.String("target", tool.Required(), tool.Description("commitish")),
-		tool.String("title", tool.Required()),
-		tool.Boolean("is_draft"),
-		tool.Boolean("is_pre_release"),
-		tool.String("body"),
+	ReleaseReadTool = tool.NewDefinition(
+		ReleaseReadToolName,
+		"Read releases by ID, tag or latest, list or download their assets.",
+		annotation.ReadOnly("Read releases"),
+		tool.String("method", tool.Required(), tool.Enum("list", "get", "get_by_tag", "get_latest", "list_assets", "get_asset", "download_asset")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.Number("id", tool.Description("required for 'get' and asset methods")),
+		tool.String("tag", tool.Description("required for 'get_by_tag'")),
+		tool.Boolean("is_draft", tool.Description("for 'list'")),
+		tool.Boolean("is_pre_release", tool.Description("for 'list'")),
+		tool.Number("attachment_id", tool.Description("required for 'get_asset'/'download_asset'")),
+		tool.String("output_path", tool.Description("for 'download_asset', optional local file path")),
+		tool.Number("page", tool.Default(1), tool.Minimum(1)),
+		tool.Number("per_page", tool.Default(20), tool.Minimum(1)),
 	)
-
-	DeleteReleaseTool = tool.NewDefinition(
-		DeleteReleaseToolName,
-		"Delete a release from a repository by its numeric ID. This action is destructive and cannot be undone.",
-		annotation.Destructive("Delete a release"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Number("id", tool.Required()),
-	)
-
-	GetReleaseTool = tool.NewDefinition(
-		GetReleaseToolName,
-		"Get a release by ID",
-		annotation.ReadOnly("Get release details"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Number("id", tool.Required()),
-	)
-
-	GetLatestReleaseTool = tool.NewDefinition(
-		GetLatestReleaseToolName,
-		"Get the most recent published (non-draft) release in a repository.",
-		annotation.ReadOnly("Get latest release"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-	)
-
-	ListReleasesTool = tool.NewDefinition(
-		ListReleasesToolName,
-		"List releases in a repository, optionally filtered to drafts or pre-releases.",
-		annotation.ReadOnly("List releases"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Boolean("is_draft"),
-		tool.Boolean("is_pre_release"),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1), tool.Minimum(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(20), tool.Minimum(1)),
+	ReleaseWriteTool = tool.NewDefinition(
+		ReleaseWriteToolName,
+		"Write releases, upload or delete their assets.",
+		annotation.Destructive("Write releases"),
+		tool.String("method", tool.Required(), tool.Enum("create", "update", "delete", "upload_asset", "delete_asset")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.Number("id", tool.Description("required except for 'create'")),
+		tool.String("tag_name", tool.Description("required for 'create', optional for 'update'")),
+		tool.String("target", tool.Description("commitish, required for 'create', optional for 'update'")),
+		tool.String("title", tool.Description("required for 'create', optional for 'update'")),
+		tool.String("body", tool.Description("for 'create'/'update', omitted or empty fields stay unchanged on update")),
+		tool.Boolean("is_draft", tool.Description("for 'create'/'update'")),
+		tool.Boolean("is_pre_release", tool.Description("for 'create'/'update'")),
+		tool.Number("attachment_id", tool.Description("required for 'delete_asset'")),
+		tool.String("name", tool.Description("filename, required for 'upload_asset'")),
+		tool.String("content", tool.Description("base64, required for 'upload_asset'")),
 	)
 )
 
 func init() {
-	ReleaseTool.RegisterWrite(tool.ServerTool{
-		Tool:    CreateReleaseTool,
-		Handler: CreateReleaseFn,
-	})
-	ReleaseTool.RegisterWrite(tool.ServerTool{
-		Tool:    DeleteReleaseTool,
-		Handler: DeleteReleaseFn,
-	})
-	ReleaseTool.RegisterRead(tool.ServerTool{
-		Tool:    GetReleaseTool,
-		Handler: GetReleaseFn,
-	})
-	ReleaseTool.RegisterRead(tool.ServerTool{
-		Tool:    GetLatestReleaseTool,
-		Handler: GetLatestReleaseFn,
-	})
-	ReleaseTool.RegisterRead(tool.ServerTool{
-		Tool:    ListReleasesTool,
-		Handler: ListReleasesFn,
-	})
+	ReleaseTool.RegisterRead(tool.ServerTool{Tool: ReleaseReadTool, Handler: tool.Dispatch(map[string]tool.Handler{
+		"list":           listReleasesFn,
+		"get":            getReleaseFn,
+		"get_by_tag":     getReleaseByTagFn,
+		"get_latest":     getLatestReleaseFn,
+		"list_assets":    listReleaseAssetsFn,
+		"get_asset":      getReleaseAssetFn,
+		"download_asset": downloadReleaseAssetFn,
+	})})
+	ReleaseTool.RegisterWrite(tool.ServerTool{Tool: ReleaseWriteTool, Handler: tool.Dispatch(map[string]tool.Handler{
+		"create":       createReleaseFn,
+		"update":       updateReleaseFn,
+		"delete":       deleteReleaseFn,
+		"upload_asset": uploadReleaseAssetFn,
+		"delete_asset": deleteReleaseAssetFn,
+	})})
 }
 
-func CreateReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
+func releaseArgs(ctx context.Context, args map[string]any) (string, string, *gitea_sdk.Client, error) {
+	owner, repo, err := params.GetRepo(args)
+	if err != nil {
+		return "", "", nil, err
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("get gitea client err: %v", err)
+	}
+	return owner, repo, client, nil
+}
+
+func listReleaseAssetsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	repo, err := params.GetString(args, "repo")
+	id, err := params.GetIndex(args, "id")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	page, pageSize := params.GetPagination(args, 20)
+	assets, _, err := client.Releases.ListReleaseAttachments(ctx, owner, repo, id, gitea_sdk.ListReleaseAttachmentsOptions{
+		Page: page, PageSize: pageSize,
+	})
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("list release assets error: %v", err))
+	}
+	return to.TextResult(attachment.SlimList(assets))
+}
+
+func uploadReleaseAssetFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	id, err := params.GetIndex(args, "id")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	name, content, err := attachment.Upload(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	asset, _, err := client.Releases.CreateReleaseAttachment(ctx, owner, repo, id, content, name)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("upload release asset error: %v", err))
+	}
+	return to.TextResult(attachment.Slim(asset))
+}
+
+func deleteReleaseAssetFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	id, err := params.GetIndex(args, "id")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	attachmentID, err := params.GetIndex(args, "attachment_id")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	if _, err := client.Releases.DeleteReleaseAttachment(ctx, owner, repo, id, attachmentID); err != nil {
+		return to.ErrorResult(fmt.Errorf("delete release asset error: %v", err))
+	}
+	return to.TextResult("Release asset deleted successfully")
+}
+
+func releaseAsset(ctx context.Context, args map[string]any, owner, repo string, client *gitea_sdk.Client) (*gitea_sdk.Attachment, error) {
+	id, err := params.GetIndex(args, "id")
+	if err != nil {
+		return nil, err
+	}
+	attachmentID, err := params.GetIndex(args, "attachment_id")
+	if err != nil {
+		return nil, err
+	}
+	asset, _, err := client.Releases.GetReleaseAttachment(ctx, owner, repo, id, attachmentID)
+	if err != nil {
+		return nil, fmt.Errorf("get release asset error: %v", err)
+	}
+	return asset, nil
+}
+
+func getReleaseAssetFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	asset, err := releaseAsset(ctx, args, owner, repo, client)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	return to.TextResult(attachment.Slim(asset))
+}
+
+func downloadReleaseAssetFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	asset, err := releaseAsset(ctx, args, owner, repo, client)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	return attachment.Download(ctx, owner, repo, asset, "", params.GetOptionalString(args, "output_path", ""))
+}
+
+func createReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -127,10 +210,6 @@ func CreateReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolRes
 	isPreRelease, _ := args["is_pre_release"].(bool)
 	body, _ := args["body"].(string)
 
-	client, err := gitea.ClientFromContext(ctx)
-	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
-	}
 	_, _, err = client.Releases.CreateRelease(ctx, owner, repo, gitea_sdk.CreateReleaseOption{
 		TagName:      tagName,
 		Target:       target,
@@ -146,12 +225,8 @@ func CreateReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolRes
 	return to.TextResult("Release Created")
 }
 
-func DeleteReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
+func updateReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -160,10 +235,31 @@ func DeleteReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolRes
 		return to.ErrorResult(err)
 	}
 
-	client, err := gitea.ClientFromContext(ctx)
+	release, _, err := client.Releases.EditRelease(ctx, owner, repo, id, gitea_sdk.EditReleaseOption{
+		TagName:      params.GetOptionalString(args, "tag_name", ""),
+		Target:       params.GetOptionalString(args, "target", ""),
+		Title:        params.GetOptionalString(args, "title", ""),
+		Note:         params.GetOptionalString(args, "body", ""),
+		IsDraft:      params.GetOptionalBoolPtr(args, "is_draft"),
+		IsPrerelease: params.GetOptionalBoolPtr(args, "is_pre_release"),
+	})
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+		return to.ErrorResult(fmt.Errorf("update release error: %v", err))
 	}
+
+	return to.TextResult(slimRelease(release))
+}
+
+func deleteReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	id, err := params.GetIndex(args, "id")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+
 	_, err = client.Releases.DeleteRelease(ctx, owner, repo, id)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("delete release error: %v", err))
@@ -172,12 +268,8 @@ func DeleteReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolRes
 	return to.TextResult("Release deleted successfully")
 }
 
-func GetReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
+func getReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -186,10 +278,6 @@ func GetReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 		return to.ErrorResult(err)
 	}
 
-	client, err := gitea.ClientFromContext(ctx)
-	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
-	}
 	release, _, err := client.Releases.GetRelease(ctx, owner, repo, id)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get release error: %v", err))
@@ -198,20 +286,30 @@ func GetReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	return to.TextResult(slimRelease(release))
 }
 
-func GetLatestReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
+func getReleaseByTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	repo, err := params.GetString(args, "repo")
+	tag, err := params.GetString(args, "tag")
 	if err != nil {
 		return to.ErrorResult(err)
 	}
 
-	client, err := gitea.ClientFromContext(ctx)
+	release, _, err := client.Releases.GetReleaseByTag(ctx, owner, repo, tag)
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+		return to.ErrorResult(fmt.Errorf("get release by tag error: %v", err))
 	}
+
+	return to.TextResult(slimRelease(release))
+}
+
+func getLatestReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+
 	release, _, err := client.Releases.GetLatestRelease(ctx, owner, repo)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get latest release error: %v", err))
@@ -220,21 +318,13 @@ func GetLatestReleaseFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	return to.TextResult(slimRelease(release))
 }
 
-func ListReleasesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	owner, err := params.GetString(args, "owner")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	repo, err := params.GetString(args, "repo")
+func listReleasesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, client, err := releaseArgs(ctx, args)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
 	page, pageSize := params.GetPagination(args, 20)
 
-	client, err := gitea.ClientFromContext(ctx)
-	if err != nil {
-		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
-	}
 	releases, _, err := client.Releases.ListReleases(ctx, owner, repo, gitea_sdk.ListReleasesOptions{
 		Page:         page,
 		PageSize:     pageSize,

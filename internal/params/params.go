@@ -6,14 +6,7 @@ import (
 	"time"
 )
 
-// Shared parameter description strings used across tools. Extracted to avoid
-// repeating the same boilerplate in every tool schema (saves tokens in the
-// tool list sent to MCP clients).
 const (
-	OwnerDesc       = "repo owner"
-	RepoDesc        = "repo name"
-	PageDesc        = "page"
-	PaginationDesc  = "results per page"
 	PathDesc        = "path relative to repo root"
 	FileContentDesc = "literal file text, not base64"
 )
@@ -136,6 +129,16 @@ func GetOptionalBoolPtr(args map[string]any, key string) *bool {
 		return &v
 	}
 	return nil
+}
+
+func GetRepo(args map[string]any) (owner, repo string, err error) {
+	if owner, err = GetString(args, "owner"); err != nil {
+		return "", "", err
+	}
+	if repo, err = GetString(args, "repo"); err != nil {
+		return "", "", err
+	}
+	return owner, repo, nil
 }
 
 // GetOptionalStringPtr returns nil when the key is missing OR the value is an empty string.

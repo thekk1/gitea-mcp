@@ -28,27 +28,27 @@ const (
 var (
 	SearchUsersTool = tool.NewDefinition(
 		SearchUsersToolName,
-		"Search for Gitea users by username or full name.",
+		"Search users by username or full name.",
 		annotation.ReadOnly("Search users"),
 		tool.String("query", tool.Required()),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	SearchOrgTeamsTool = tool.NewDefinition(
 		SearchOrgTeamsToolName,
-		"Search for teams within an organization by name, optionally including each team's description in the results.",
+		"Search an organization's teams by name.",
 		annotation.ReadOnly("Search organization teams"),
 		tool.String("org", tool.Required()),
 		tool.String("query", tool.Required()),
 		tool.Boolean("include_description"),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	SearchReposTool = tool.NewDefinition(
 		SearchReposToolName,
-		"Search for repositories by keyword, with filters for topic/description matching, owner, visibility, archived status, and sort order.",
+		"Search repositories by keyword.",
 		annotation.ReadOnly("Search repositories"),
 		tool.String("query", tool.Required()),
 		tool.Boolean("keyword_is_topic"),
@@ -58,21 +58,21 @@ var (
 		tool.Boolean("is_archived"),
 		tool.String("sort"),
 		tool.String("order"),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	SearchIssuesTool = tool.NewDefinition(
 		SearchIssuesToolName,
-		"Search issues and PRs across repositories",
+		"Full-text search of issues and pull requests across repositories.",
 		annotation.ReadOnly("Search issues"),
 		tool.String("query", tool.Required()),
 		tool.String("state", tool.Enum("open", "closed", "all")),
 		tool.String("type", tool.Enum("issues", "pulls")),
 		tool.String("labels", tool.Description("comma-separated")),
 		tool.String("owner", tool.Description("filter by owner")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 )
 

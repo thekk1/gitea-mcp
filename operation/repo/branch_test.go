@@ -1,136 +1,131 @@
 package repo
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
+	"maps"
 	"net/http"
-	"net/http/httptest"
+	"reflect"
 	"strings"
-	"sync"
 	"testing"
 
-	"gitea.com/gitea/gitea-mcp/internal/flag"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gitea.com/gitea/gitea-mcp/internal/tool"
 )
 
-func TestRenameBranchFnMissingArgs(t *testing.T) {
-	fullArgs := map[string]any{
-		"owner":    "octo",
-		"repo":     "demo",
-		"branch":   "old-name",
-		"new_name": "new-name",
-	}
-
-	for _, missing := range []string{"owner", "repo", "branch", "new_name"} {
-		t.Run(missing, func(t *testing.T) {
-			args := map[string]any{}
-			for k, v := range fullArgs {
-				if k != missing {
-					args[k] = v
-				}
-			}
-
-			result, err := RenameBranchFn(context.Background(), args)
-			if err != nil {
-				t.Fatalf("RenameBranchFn() error = %v", err)
-			}
-			if !result.IsError {
-				t.Fatalf("RenameBranchFn() with missing %q, want error result", missing)
-			}
-		})
-	}
-}
-
-func TestRenameBranchFn(t *testing.T) {
-	const (
-		owner   = "octo"
-		repo    = "demo"
-		branch  = "old-name"
-		newName = "new-name"
-	)
-
+func TestBranchMethods(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
-		serverStatus int
-		wantErr      bool
+		handler      tool.Handler
+		args         map[string]any
+		required     []string
+		request      string
+		status       int
+		response     string
 		wantContains string
+		wantBranch   map[string]any
 	}{
-		{"success", http.StatusNoContent, false, "Branch renamed"},
-		{"server error", http.StatusInternalServerError, true, "rename branch error"},
+		{
+			name:     "list",
+			handler:  BranchTool.ReadTools()[0].Handler,
+			required: []string{"owner", "repo"},
+		},
+		{
+			name:     "create",
+			handler:  BranchTool.WriteTools()[0].Handler,
+			args:     map[string]any{"branch": "feature/topic"},
+			required: []string{"owner", "repo", "branch"},
+		},
+		{
+			name:     "delete",
+			handler:  BranchTool.WriteTools()[0].Handler,
+			args:     map[string]any{"branch": "feature/topic"},
+			required: []string{"owner", "repo", "branch"},
+		},
+		{
+			name:       "get",
+			handler:    BranchTool.ReadTools()[0].Handler,
+			args:       map[string]any{"branch": "feature/topic"},
+			request:    "GET /api/v1/repos/octo/demo/branches/feature/topic",
+			status:     http.StatusOK,
+			response:   `{"name":"feature/topic","protected":true,"commit":{"id":"abc123","message":"omitted"},"user_can_push":true}`,
+			wantBranch: map[string]any{"name": "feature/topic", "protected": true, "commit_sha": "abc123"},
+		},
+		{
+			name:         "get error",
+			handler:      BranchTool.ReadTools()[0].Handler,
+			args:         map[string]any{"method": "get", "branch": "feature/topic"},
+			request:      "GET /api/v1/repos/octo/demo/branches/feature/topic",
+			status:       http.StatusNotFound,
+			wantContains: "get branch error",
+		},
+		{
+			name:         "rename",
+			handler:      BranchTool.WriteTools()[0].Handler,
+			args:         map[string]any{"branch": "old-name", "new_name": "new-name"},
+			required:     []string{"owner", "repo", "branch", "new_name"},
+			request:      "PATCH /api/v1/repos/octo/demo/branches/old-name",
+			status:       http.StatusNoContent,
+			wantContains: "Branch renamed",
+		},
+		{
+			name:         "rename error",
+			handler:      BranchTool.WriteTools()[0].Handler,
+			args:         map[string]any{"method": "rename", "branch": "old-name", "new_name": "new-name"},
+			request:      "PATCH /api/v1/repos/octo/demo/branches/old-name",
+			status:       http.StatusInternalServerError,
+			wantContains: "rename branch error",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var (
-				mu      sync.Mutex
-				gotBody map[string]any
-			)
-
-			renamePath := fmt.Sprintf("/api/v1/repos/%s/%s/branches/%s", owner, repo, branch)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/api/v1/version":
-					_, _ = w.Write([]byte(`{"version":"1.24.0"}`))
-				case renamePath:
-					mu.Lock()
-					_ = json.NewDecoder(r.Body).Decode(&gotBody)
-					mu.Unlock()
-					w.WriteHeader(tc.serverStatus)
-				default:
+			args := map[string]any{"method": tc.name, "owner": "octo", "repo": "demo"}
+			maps.Copy(args, tc.args)
+			for _, missing := range tc.required {
+				t.Run("missing "+missing, func(t *testing.T) {
+					incomplete := maps.Clone(args)
+					delete(incomplete, missing)
+					result, err := tc.handler(t.Context(), incomplete)
+					if err != nil || !result.IsError || !strings.Contains(resultText(t, result), missing+" is required") {
+						t.Fatalf("missing %q: result = %v, error = %v", missing, result, err)
+					}
+				})
+			}
+			if tc.request == "" {
+				return
+			}
+			serveStub(t, func(w http.ResponseWriter, r *http.Request) {
+				if request := r.Method + " " + r.URL.Path; request != tc.request {
+					t.Errorf("request = %q, want %q", request, tc.request)
 					http.NotFound(w, r)
+					return
 				}
-			}))
-			defer server.Close()
-
-			origHost, origToken := flag.Host, flag.Token
-			flag.Host, flag.Token = server.URL, ""
-			defer func() { flag.Host, flag.Token = origHost, origToken }()
-
-			result, err := RenameBranchFn(context.Background(), map[string]any{
-				"owner":    owner,
-				"repo":     repo,
-				"branch":   branch,
-				"new_name": newName,
+				if r.Method == http.MethodPatch {
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					if body["name"] != "new-name" {
+						t.Errorf("request body name = %v, want new-name", body["name"])
+					}
+				}
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.response))
 			})
-			if err != nil {
-				t.Fatalf("RenameBranchFn() error = %v", err)
+			result, err := tc.handler(t.Context(), args)
+			if err != nil || result.IsError != (tc.status >= http.StatusBadRequest) {
+				t.Fatalf("result = %v, error = %v", result, err)
 			}
-
-			if result.IsError != tc.wantErr {
-				t.Fatalf("RenameBranchFn() IsError = %v, want %v (result: %v)", result.IsError, tc.wantErr, result)
-			}
-
-			text := result.Content[0].(*mcp.TextContent).Text
+			text := resultText(t, result)
 			if !strings.Contains(text, tc.wantContains) {
 				t.Fatalf("result = %s, want it to contain %q", text, tc.wantContains)
 			}
-
-			if !tc.wantErr {
-				mu.Lock()
-				defer mu.Unlock()
-				if gotBody["name"] != newName {
-					t.Fatalf("request body name = %v, want %s", gotBody["name"], newName)
+			if tc.wantBranch != nil {
+				var branch map[string]any
+				if err := json.Unmarshal([]byte(text), &branch); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(branch, tc.wantBranch) {
+					t.Fatalf("branch = %v, want %v", branch, tc.wantBranch)
 				}
 			}
 		})
-	}
-}
-
-func TestRenameBranchToolRegistration(t *testing.T) {
-	found := false
-	for _, registered := range BranchTool.WriteTools() {
-		if registered.Tool.Name == RenameBranchToolName {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("%q is not registered as a write tool", RenameBranchToolName)
-	}
-
-	for _, registered := range BranchTool.ReadTools() {
-		if registered.Tool.Name == RenameBranchToolName {
-			t.Fatalf("%q is registered as a read tool, want write only", RenameBranchToolName)
-		}
 	}
 }

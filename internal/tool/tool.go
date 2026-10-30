@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -78,12 +79,54 @@ func (t *Tool) Tools() []ServerTool {
 	_, scopeAllowed := flag.AllowedScopes[t.scope]
 	filtered := make([]ServerTool, 0, len(all))
 	for _, st := range all {
-		_, toolAllowed := flag.AllowedTools[st.Tool.Name]
-		if scopeAllowed || toolAllowed {
+		if _, toolAllowed := flag.AllowedTools[st.Tool.Name]; scopeAllowed || toolAllowed {
 			filtered = append(filtered, st)
+		} else if methods := aliasMethods(st.Tool.Name); len(methods) > 0 {
+			filtered = append(filtered, restrictMethods(st, methods))
 		}
 	}
 	return filtered
+}
+
+func aliasMethods(name string) []string {
+	var methods []string
+	for allowed := range flag.AllowedTools {
+		if alias, ok := DeprecatedAliases[allowed]; ok && alias.Tool == name {
+			methods = append(methods, alias.Methods...)
+		}
+	}
+	slices.Sort(methods)
+	return methods
+}
+
+// restrictMethods narrows the advertised method enum and rejects other methods, so an alias never grants more than the tool it replaced.
+func restrictMethods(st ServerTool, methods []string) ServerTool {
+	restricted := *st.Tool
+	schema := maps.Clone(restricted.InputSchema.(map[string]any))
+	properties := maps.Clone(schema["properties"].(map[string]any))
+	method := maps.Clone(properties["method"].(map[string]any))
+	method["enum"] = methods
+	properties["method"], schema["properties"], restricted.InputSchema = method, properties, schema
+	return ServerTool{Tool: &restricted, Handler: func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+		if method, _ := args["method"].(string); !slices.Contains(methods, method) {
+			return to.ErrorResult(fmt.Errorf("method %q is not enabled by the --tools allowlist", method))
+		}
+		return st.Handler(ctx, args)
+	}}
+}
+
+func Dispatch(handlers map[string]Handler) Handler {
+	return func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+		method, _ := args["method"].(string)
+		if method == "" {
+			return to.ErrorResult(errors.New("method is required"))
+		}
+		handler, ok := handlers[method]
+		if !ok {
+			return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
+		}
+		return handler(ctx, args)
+	}
 }
 
 // MCPHandler adapts a project handler to the official SDK's low-level handler.
@@ -98,6 +141,10 @@ func (s ServerTool) MCPHandler() mcp.ToolHandler {
 		arguments, err := decodeArguments(req.Params.Arguments)
 		if err != nil {
 			return nil, err
+		}
+
+		if outputPath, _ := arguments["output_path"].(string); outputPath != "" && flag.Mode == "http" {
+			return to.ErrorResult(errors.New("output_path is only supported with the stdio transport")) // the caller is remote but the path is on the server
 		}
 
 		result, err = s.Handler(ctx, arguments)
@@ -159,6 +206,12 @@ func WarnUnmatchedAllowedTools(domains ...*Tool) {
 		}
 		for _, st := range d.write {
 			known[st.Tool.Name] = struct{}{}
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(flag.AllowedTools)) {
+		if alias, ok := DeprecatedAliases[name]; ok {
+			log.Warnf("Tool %q in --tools allowlist is deprecated, enabling %q methods %s instead", name, alias.Tool, strings.Join(alias.Methods, ", "))
+			known[name] = struct{}{}
 		}
 	}
 	warnUnmatched(flag.AllowedTools, known, func(unmatched []string) {

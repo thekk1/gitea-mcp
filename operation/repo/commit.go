@@ -19,63 +19,38 @@ import (
 var CommitTool = tool.New("commit")
 
 const (
-	ListRepoCommitsToolName    = "list_commits"
-	GetCommitToolName          = "get_commit"
-	CompareCommitsToolName     = "compare_commits"
-	GetCommitStatusToolName    = "get_commit_status"
-	CreateCommitStatusToolName = "create_commit_status"
+	CommitReadToolName  = "commit_read"
+	CommitWriteToolName = "commit_write"
 )
 
 var (
-	ListRepoCommitsTool = tool.NewDefinition(
-		ListRepoCommitsToolName,
-		"List commits in a repository, optionally starting from a specific branch or SHA and filtered to commits touching a given file path.",
-		annotation.ReadOnly("List repository commits"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("sha", tool.Description("starting SHA or branch")),
-		tool.String("path", tool.Description("only commits touching this path")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1), tool.Minimum(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30), tool.Minimum(1)),
+	CommitReadTool = tool.NewDefinition(
+		CommitReadToolName,
+		"Read commits with optional diff, combined statuses, and compare refs.",
+		annotation.ReadOnly("Read commits"),
+		tool.String("method", tool.Required(), tool.Enum("list", "get", "get_status", "compare")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.String("sha", tool.Description("required for 'get', optional starting SHA or branch for 'list'")),
+		tool.String("path", tool.Description("only commits touching this path for 'list'")),
+		tool.Number("page", tool.Default(1), tool.Minimum(1)),
+		tool.Number("per_page", tool.Default(30), tool.Minimum(1)),
+		tool.Boolean("include_diff", tool.Description("include unified diff for 'get'")),
+		tool.String("ref", tool.Description("SHA, branch or tag, required for 'get_status'")),
+		tool.Number("wait_seconds", tool.Description(fmt.Sprintf("for 'get_status': seconds to wait while pending, max %d", gitea.MaxStatusWaitSeconds))),
+		tool.String("base", tool.Description("branch, tag or SHA, required for 'compare'")),
+		tool.String("head", tool.Description("branch, tag or SHA, required for 'compare'")),
 	)
 
-	GetCommitTool = tool.NewDefinition(
-		GetCommitToolName,
-		"Get details for a single commit in a repository by its SHA, optionally with its unified diff.",
-		annotation.ReadOnly("Get commit details"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("sha", tool.Required()),
-		tool.Boolean("include_diff", tool.Description("include the unified diff")),
-	)
-
-	CompareCommitsTool = tool.NewDefinition(
-		CompareCommitsToolName,
-		"Compare two refs in a repository: the commits in head that are not in base, and the files they touch.",
-		annotation.ReadOnly("Compare commits"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("base", tool.Required(), tool.Description("branch, tag or SHA")),
-		tool.String("head", tool.Required(), tool.Description("branch, tag or SHA")),
-	)
-
-	GetCommitStatusTool = tool.NewDefinition(
-		GetCommitStatusToolName,
-		"Get the combined status of a commit, branch or tag: the overall state and the latest status per context, e.g. CI checks.",
-		annotation.ReadOnly("Get commit status"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("ref", tool.Required(), tool.Description("SHA, branch or tag")),
-	)
-
-	CreateCommitStatusTool = tool.NewDefinition(
-		CreateCommitStatusToolName,
-		"Create a status on a commit, e.g. the result of a CI check or review bot.",
+	CommitWriteTool = tool.NewDefinition(
+		CommitWriteToolName,
+		"Create a commit status.",
 		annotation.Write("Create a commit status"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("sha", tool.Required()),
-		tool.String("state", tool.Required(), tool.Enum("pending", "success", "error", "failure", "warning")),
+		tool.String("method", tool.Required(), tool.Enum("create_status")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.String("sha", tool.Description("required for 'create_status'")),
+		tool.String("state", tool.Description("required for 'create_status'"), tool.Enum("pending", "success", "error", "failure", "warning")),
 		tool.String("context", tool.Description("check name, e.g. 'ci/build'")),
 		tool.String("description"),
 		tool.String("target_url", tool.Description("link to details")),
@@ -84,28 +59,23 @@ var (
 
 func init() {
 	CommitTool.RegisterRead(tool.ServerTool{
-		Tool:    ListRepoCommitsTool,
-		Handler: ListRepoCommitsFn,
-	})
-	CommitTool.RegisterRead(tool.ServerTool{
-		Tool:    GetCommitTool,
-		Handler: GetCommitFn,
-	})
-	CommitTool.RegisterRead(tool.ServerTool{
-		Tool:    CompareCommitsTool,
-		Handler: CompareCommitsFn,
-	})
-	CommitTool.RegisterRead(tool.ServerTool{
-		Tool:    GetCommitStatusTool,
-		Handler: GetCommitStatusFn,
+		Tool: CommitReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"list":       listRepoCommitsFn,
+			"get":        getCommitFn,
+			"get_status": getCommitStatusFn,
+			"compare":    compareCommitsFn,
+		}),
 	})
 	CommitTool.RegisterWrite(tool.ServerTool{
-		Tool:    CreateCommitStatusTool,
-		Handler: CreateCommitStatusFn,
+		Tool: CommitWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create_status": createCommitStatusFn,
+		}),
 	})
 }
 
-func ListRepoCommitsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func listRepoCommitsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	owner, err := params.GetString(args, "owner")
 	if err != nil {
 		return to.ErrorResult(err)
@@ -141,7 +111,7 @@ type getCommitArgs struct {
 	IncludeDiff bool   `json:"include_diff"`
 }
 
-func GetCommitFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func getCommitFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	var in getCommitArgs
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
@@ -172,7 +142,7 @@ type compareCommitsArgs struct {
 	Head  string `json:"head" required:"true"`
 }
 
-func CompareCommitsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func compareCommitsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	var in compareCommitsArgs
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
@@ -193,12 +163,13 @@ func CompareCommitsFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 }
 
 type getCommitStatusArgs struct {
-	Owner string `json:"owner" required:"true"`
-	Repo  string `json:"repo" required:"true"`
-	Ref   string `json:"ref" required:"true"`
+	Owner       string `json:"owner" required:"true"`
+	Repo        string `json:"repo" required:"true"`
+	Ref         string `json:"ref" required:"true"`
+	WaitSeconds int64  `json:"wait_seconds"`
 }
 
-func GetCommitStatusFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func getCommitStatusFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	var in getCommitStatusArgs
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
@@ -207,7 +178,10 @@ func GetCommitStatusFn(ctx context.Context, args map[string]any) (*mcp.CallToolR
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	status, _, err := client.Repositories.GetCombinedStatus(ctx, in.Owner, in.Repo, in.Ref)
+	status, err := gitea.WaitStatus(ctx, in.WaitSeconds, func() (*gitea_sdk.CombinedStatus, error) {
+		status, _, err := client.Repositories.GetCombinedStatus(ctx, in.Owner, in.Repo, in.Ref)
+		return status, err
+	})
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get %v status err: %v", in.Ref, err))
 	}
@@ -224,7 +198,7 @@ type createCommitStatusArgs struct {
 	TargetURL   string                `json:"target_url"`
 }
 
-func CreateCommitStatusFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func createCommitStatusFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	var in createCommitStatusArgs
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)

@@ -19,70 +19,68 @@ import (
 var BranchTool = tool.New("branch")
 
 const (
-	CreateBranchToolName = "create_branch"
-	DeleteBranchToolName = "delete_branch"
-	ListBranchesToolName = "list_branches"
-	RenameBranchToolName = "rename_branch"
+	BranchReadToolName  = "branch_read"
+	BranchWriteToolName = "branch_write"
 )
 
 var (
-	CreateBranchTool = tool.NewDefinition(
-		CreateBranchToolName,
-		"Create a new branch in a repository, optionally from a specific source branch (defaults to the repository's default branch).",
-		annotation.Write("Create a new branch"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("branch", tool.Required()),
-		tool.String("old_branch", tool.Description("source branch (default: repo default)")),
+	BranchReadTool = tool.NewDefinition(
+		BranchReadToolName,
+		"Read branches.",
+		annotation.ReadOnly("Read branches"),
+		tool.String("method", tool.Required(), tool.Enum("list", "get")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.String("branch", tool.Description("required for 'get'")),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
-	DeleteBranchTool = tool.NewDefinition(
-		DeleteBranchToolName,
-		"Permanently delete a branch from a repository. This action is destructive and cannot be undone.",
-		annotation.Destructive("Delete a branch"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("branch", tool.Required()),
-	)
-
-	ListBranchesTool = tool.NewDefinition(
-		ListBranchesToolName,
-		"List all branches in a repository, paginated.",
-		annotation.ReadOnly("List repository branches"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
-	)
-
-	RenameBranchTool = tool.NewDefinition(
-		RenameBranchToolName,
-		"Rename an existing branch in a repository.",
-		annotation.Write("Rename a branch"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("branch", tool.Required()),
-		tool.String("new_name", tool.Required()),
+	BranchWriteTool = tool.NewDefinition(
+		BranchWriteToolName,
+		"Create, delete or rename branches.",
+		annotation.Destructive("Create, delete, or rename branches"),
+		tool.String("method", tool.Required(), tool.Enum("create", "delete", "rename")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.String("branch", tool.Description("required for 'create', 'delete', 'rename'")),
+		tool.String("old_branch", tool.Description("source for 'create' (default: repo default)")),
+		tool.String("new_name", tool.Description("required for 'rename'")),
 	)
 )
 
 func init() {
-	BranchTool.RegisterWrite(tool.ServerTool{
-		Tool:    CreateBranchTool,
-		Handler: CreateBranchFn,
-	})
-	BranchTool.RegisterWrite(tool.ServerTool{
-		Tool:    DeleteBranchTool,
-		Handler: DeleteBranchFn,
-	})
 	BranchTool.RegisterRead(tool.ServerTool{
-		Tool:    ListBranchesTool,
-		Handler: ListBranchesFn,
+		Tool: BranchReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"list": listBranchesFn,
+			"get":  branchGetFn,
+		}),
 	})
 	BranchTool.RegisterWrite(tool.ServerTool{
-		Tool:    RenameBranchTool,
-		Handler: RenameBranchFn,
+		Tool: BranchWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create": createBranchFn,
+			"delete": deleteBranchFn,
+			"rename": renameBranchFn,
+		}),
 	})
+}
+
+func branchGetFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	var in branchArgs
+	if err := params.Bind(args, &in); err != nil {
+		return to.ErrorResult(err)
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	branch, _, err := client.Repositories.GetRepoBranch(ctx, in.Owner, in.Repo, in.Branch)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get branch error: %v", err))
+	}
+	return to.TextResult(slimBranch(branch))
 }
 
 type createBranchArgs struct {
@@ -92,7 +90,7 @@ type createBranchArgs struct {
 	OldBranch string `json:"old_branch"`
 }
 
-func CreateBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func createBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	var in createBranchArgs
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
@@ -113,14 +111,14 @@ func CreateBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResu
 	return to.TextResult("Branch Created")
 }
 
-type deleteBranchArgs struct {
+type branchArgs struct {
 	Owner  string `json:"owner" required:"true"`
 	Repo   string `json:"repo" required:"true"`
 	Branch string `json:"branch" required:"true"`
 }
 
-func DeleteBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	var in deleteBranchArgs
+func deleteBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	var in branchArgs
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
 	}
@@ -141,7 +139,7 @@ type listBranchesArgs struct {
 	Repo  string `json:"repo" required:"true"`
 }
 
-func ListBranchesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func listBranchesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	var in listBranchesArgs
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
@@ -163,7 +161,7 @@ func ListBranchesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResu
 	return to.TextResult(slimBranches(branches))
 }
 
-func RenameBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func renameBranchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	owner, err := params.GetString(args, "owner")
 	if err != nil {
 		return to.ErrorResult(err)

@@ -18,73 +18,54 @@ import (
 var TagTool = tool.New("tag")
 
 const (
-	CreateTagToolName = "create_tag"
-	DeleteTagToolName = "delete_tag"
-	GetTagToolName    = "get_tag"
-	ListTagsToolName  = "list_tags"
+	TagReadToolName  = "tag_read"
+	TagWriteToolName = "tag_write"
 )
 
 var (
-	CreateTagTool = tool.NewDefinition(
-		CreateTagToolName,
-		"Create a new Git tag in a repository at a target commit, branch, or existing tag, with an optional annotation message.",
-		annotation.Write("Create a tag"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("tag_name", tool.Required()),
-		tool.String("target", tool.Description("commitish")),
-		tool.String("message", tool.Description("tag message")),
+	TagReadTool = tool.NewDefinition(
+		TagReadToolName,
+		"Read tags.",
+		annotation.ReadOnly("Read tags"),
+		tool.String("method", tool.Required(), tool.Enum("list", "get")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.String("tag_name", tool.Description("for 'get'")),
+		tool.Number("page", tool.Default(1), tool.Minimum(1)),
+		tool.Number("per_page", tool.Default(20), tool.Minimum(1)),
 	)
 
-	DeleteTagTool = tool.NewDefinition(
-		DeleteTagToolName,
-		"Permanently delete a tag from a repository. This action is destructive and cannot be undone.",
-		annotation.Destructive("Delete a tag"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("tag_name", tool.Required()),
-	)
-
-	GetTagTool = tool.NewDefinition(
-		GetTagToolName,
-		"Get details for a single tag in a repository by name.",
-		annotation.ReadOnly("Get tag details"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.String("tag_name", tool.Required()),
-	)
-
-	ListTagsTool = tool.NewDefinition(
-		ListTagsToolName,
-		"List all tags in a repository, paginated.",
-		annotation.ReadOnly("List tags"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1), tool.Minimum(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(20), tool.Minimum(1)),
+	TagWriteTool = tool.NewDefinition(
+		TagWriteToolName,
+		"Create or delete tags.",
+		annotation.Destructive("Write tags"),
+		tool.String("method", tool.Required(), tool.Enum("create", "delete")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.String("tag_name", tool.Description("for 'create', 'delete'")),
+		tool.String("target", tool.Description("commitish for 'create'")),
+		tool.String("message", tool.Description("annotation for 'create'")),
 	)
 )
 
 func init() {
-	TagTool.RegisterWrite(tool.ServerTool{
-		Tool:    CreateTagTool,
-		Handler: CreateTagFn,
-	})
-	TagTool.RegisterWrite(tool.ServerTool{
-		Tool:    DeleteTagTool,
-		Handler: DeleteTagFn,
-	})
 	TagTool.RegisterRead(tool.ServerTool{
-		Tool:    GetTagTool,
-		Handler: GetTagFn,
+		Tool: TagReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"list": listTagsFn,
+			"get":  getTagFn,
+		}),
 	})
-	TagTool.RegisterRead(tool.ServerTool{
-		Tool:    ListTagsTool,
-		Handler: ListTagsFn,
+	TagTool.RegisterWrite(tool.ServerTool{
+		Tool: TagWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create": createTagFn,
+			"delete": deleteTagFn,
+		}),
 	})
 }
 
-func CreateTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func createTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	owner, err := params.GetString(args, "owner")
 	if err != nil {
 		return to.ErrorResult(err)
@@ -116,7 +97,7 @@ func CreateTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 	return to.TextResult("Tag Created")
 }
 
-func DeleteTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func deleteTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	owner, err := params.GetString(args, "owner")
 	if err != nil {
 		return to.ErrorResult(err)
@@ -142,7 +123,7 @@ func DeleteTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 	return to.TextResult("Tag deleted")
 }
 
-func GetTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func getTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	owner, err := params.GetString(args, "owner")
 	if err != nil {
 		return to.ErrorResult(err)
@@ -168,7 +149,7 @@ func GetTagFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, er
 	return to.TextResult(slimTag(tag))
 }
 
-func ListTagsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func listTagsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	owner, err := params.GetString(args, "owner")
 	if err != nil {
 		return to.ErrorResult(err)

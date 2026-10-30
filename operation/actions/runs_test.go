@@ -34,6 +34,7 @@ func TestRunWriteJobControlMethods(t *testing.T) {
 		args   map[string]any
 		want   string
 	}{
+		{"delete_run", map[string]any{"run_id": float64(5)}, "DELETE /api/v1/repos/o/r/actions/runs/5"},
 		{"rerun_job", map[string]any{"run_id": float64(5), "job_id": float64(9)}, "POST /api/v1/repos/o/r/actions/runs/5/jobs/9/rerun"},
 		{"rerun_failed_jobs", map[string]any{"run_id": float64(5)}, "POST /api/v1/repos/o/r/actions/runs/5/rerun-failed-jobs"},
 		{"approve_run", map[string]any{"run_id": float64(5)}, "POST /api/v1/repos/o/r/actions/runs/5/approve"},
@@ -56,7 +57,7 @@ func TestRunWriteJobControlMethods(t *testing.T) {
 
 			args := map[string]any{"method": tc.method, "owner": "o", "repo": "r"}
 			maps.Copy(args, tc.args)
-			result, err := runWriteFn(t.Context(), args)
+			result, err := Tool.WriteTools()[1].Handler(t.Context(), args)
 			if err != nil {
 				t.Fatal(err)
 			}

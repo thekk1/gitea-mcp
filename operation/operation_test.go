@@ -3,10 +3,12 @@ package operation
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
 	"gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/tool"
 )
 
 const metadataPath = "/.well-known/oauth-protected-resource" + mcpPath
@@ -123,5 +125,28 @@ func TestHealthzEndpoint(t *testing.T) {
 	}
 	if body := rec.Body.String(); body == "" {
 		t.Error("body is empty, want a non-empty health message")
+	}
+}
+
+func TestDeprecatedAliasesPointToRegisteredMethods(t *testing.T) {
+	methods := map[string][]string{}
+	for _, d := range domainTools {
+		for _, st := range slices.Concat(d.ReadTools(), d.WriteTools()) {
+			methods[st.Tool.Name] = nil
+			if method, ok := st.Tool.InputSchema.(map[string]any)["properties"].(map[string]any)["method"].(map[string]any); ok {
+				methods[st.Tool.Name], _ = method["enum"].([]string)
+			}
+		}
+	}
+	for name, alias := range tool.DeprecatedAliases {
+		_, aliasRegistered := methods[name]
+		if aliasRegistered || len(alias.Methods) == 0 {
+			t.Errorf("alias %q: registered %v, methods %v", name, aliasRegistered, alias.Methods)
+		}
+		for _, method := range alias.Methods {
+			if !slices.Contains(methods[alias.Tool], method) {
+				t.Errorf("alias %q: %s has no method %q", name, alias.Tool, method)
+			}
+		}
 	}
 }

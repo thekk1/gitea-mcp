@@ -25,7 +25,7 @@ const (
 var (
 	NotificationReadTool = tool.NewDefinition(
 		NotificationReadToolName,
-		"Read notifications: list (optionally scoped to a repo) or get a thread by ID.",
+		"List notifications or get a thread.",
 		annotation.ReadOnly("Read notifications"),
 		tool.String("method", tool.Required(), tool.Enum("list", "get")),
 		tool.String("owner", tool.Description("scope 'list' to a repo")),
@@ -35,13 +35,13 @@ var (
 		tool.String("subject_type", tool.Enum("Issue", "Pull", "Commit", "Repository")),
 		tool.String("since", tool.Description("updated after ISO 8601")),
 		tool.String("before", tool.Description("updated before ISO 8601")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	NotificationWriteTool = tool.NewDefinition(
 		NotificationWriteToolName,
-		"Mark a notification or all notifications as read.",
+		"Mark notifications as read.",
 		annotation.Write("Manage notifications"),
 		tool.String("method", tool.Required(), tool.Enum("mark_read", "mark_all_read")),
 		tool.Number("id", tool.Description("thread ID (for 'mark_read')")),
@@ -53,43 +53,19 @@ var (
 
 func init() {
 	Tool.RegisterRead(tool.ServerTool{
-		Tool:    NotificationReadTool,
-		Handler: notificationReadFn,
+		Tool: NotificationReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"list": listNotificationsFn,
+			"get":  getNotificationFn,
+		}),
 	})
 	Tool.RegisterWrite(tool.ServerTool{
-		Tool:    NotificationWriteTool,
-		Handler: notificationWriteFn,
+		Tool: NotificationWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"mark_read":     markNotificationReadFn,
+			"mark_all_read": markAllNotificationsReadFn,
+		}),
 	})
-}
-
-func notificationReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "list":
-		return listNotificationsFn(ctx, args)
-	case "get":
-		return getNotificationFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func notificationWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "mark_read":
-		return markNotificationReadFn(ctx, args)
-	case "mark_all_read":
-		return markAllNotificationsReadFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
 }
 
 func listNotificationsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

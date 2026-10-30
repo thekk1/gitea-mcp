@@ -46,10 +46,10 @@ var (
 
 	GetFileContentTool = tool.NewDefinition(
 		GetFileToolName,
-		"Get file content and metadata, or list a directory",
+		"Get a file or list a directory.",
 		annotation.ReadOnly("Get file or directory contents"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("path", tool.Default("/"), tool.Description(params.PathDesc)),
 		tool.String("ref", tool.Description("branch, tag, or commit SHA, defaults to the default branch")),
 		tool.String("sha", tool.Description("commit SHA, overrides ref")),
@@ -60,20 +60,20 @@ var (
 
 	GetDirContentTool = tool.NewDefinition(
 		GetDirToolName,
-		"List the entries (files and subdirectories) in a repository directory at a given ref (branch, tag, or commit SHA).",
+		"List a repository directory.",
 		annotation.ReadOnly("Get directory contents"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("ref", tool.Required(), tool.Description("branch, tag, or commit SHA")),
 		tool.String("path", tool.Required(), tool.Description(params.PathDesc)),
 	)
 
 	CreateOrUpdateFileTool = tool.NewDefinition(
 		CreateOrUpdateFileToolName,
-		"Write files in one commit: create, update, rename, delete.",
+		"Create, update, rename or delete files in one commit.",
 		annotation.Write("Create, update, rename, or delete files"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("path", tool.Description(params.PathDesc)),
 		tool.String("content", tool.Description(params.FileContentDesc)),
 		tool.String("message", tool.Required(), tool.Description("commit message")),
@@ -98,10 +98,10 @@ var (
 
 	DeleteFileTool = tool.NewDefinition(
 		DeleteFileToolName,
-		"Delete a file from a repository by committing the removal to a branch. Requires the file's current SHA and a commit message.",
+		"Delete a file in a new commit.",
 		annotation.Destructive("Delete a file"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("path", tool.Required(), tool.Description(params.PathDesc)),
 		tool.String("message", tool.Required(), tool.Description("commit message")),
 		tool.String("branch_name", tool.Required(), tool.Description("branch to commit to")),

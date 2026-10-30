@@ -53,13 +53,13 @@ var (
 		tool.String("repo", tool.Description("for repo methods")),
 		tool.String("org", tool.Description("for org methods")),
 		tool.String("name", tool.Description("for get methods")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1), tool.Minimum(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30), tool.Minimum(1)),
+		tool.Number("page", tool.Default(1), tool.Minimum(1)),
+		tool.Number("per_page", tool.Default(30), tool.Minimum(1)),
 	)
 
 	ActionsConfigWriteTool = tool.NewDefinition(
 		ActionsConfigWriteToolName,
-		"Write Actions secrets and variables: upsert, create, update, delete.",
+		"Write Actions secrets and variables.",
 		annotation.Destructive("Manage Actions secrets and variables"),
 		tool.String("method", tool.Required(), tool.Enum("upsert_repo_secret", "delete_repo_secret", "upsert_org_secret", "delete_org_secret", "create_repo_variable", "update_repo_variable", "delete_repo_variable", "create_org_variable", "update_org_variable", "delete_org_variable")),
 		tool.String("owner", tool.Description("for repo methods")),
@@ -73,62 +73,26 @@ var (
 )
 
 func init() {
-	Tool.RegisterRead(tool.ServerTool{Tool: ActionsConfigReadTool, Handler: configReadFn})
-	Tool.RegisterWrite(tool.ServerTool{Tool: ActionsConfigWriteTool, Handler: configWriteFn})
-}
-
-func configReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "list_repo_secrets":
-		return listRepoActionSecretsFn(ctx, args)
-	case "list_org_secrets":
-		return listOrgActionSecretsFn(ctx, args)
-	case "list_repo_variables":
-		return listRepoActionVariablesFn(ctx, args)
-	case "get_repo_variable":
-		return getRepoActionVariableFn(ctx, args)
-	case "list_org_variables":
-		return listOrgActionVariablesFn(ctx, args)
-	case "get_org_variable":
-		return getOrgActionVariableFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func configWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "upsert_repo_secret":
-		return upsertRepoActionSecretFn(ctx, args)
-	case "delete_repo_secret":
-		return deleteRepoActionSecretFn(ctx, args)
-	case "upsert_org_secret":
-		return upsertOrgActionSecretFn(ctx, args)
-	case "delete_org_secret":
-		return deleteOrgActionSecretFn(ctx, args)
-	case "create_repo_variable":
-		return createRepoActionVariableFn(ctx, args)
-	case "update_repo_variable":
-		return updateRepoActionVariableFn(ctx, args)
-	case "delete_repo_variable":
-		return deleteRepoActionVariableFn(ctx, args)
-	case "create_org_variable":
-		return createOrgActionVariableFn(ctx, args)
-	case "update_org_variable":
-		return updateOrgActionVariableFn(ctx, args)
-	case "delete_org_variable":
-		return deleteOrgActionVariableFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
+	Tool.RegisterRead(tool.ServerTool{Tool: ActionsConfigReadTool, Handler: tool.Dispatch(map[string]tool.Handler{
+		"list_repo_secrets":   listRepoActionSecretsFn,
+		"list_org_secrets":    listOrgActionSecretsFn,
+		"list_repo_variables": listRepoActionVariablesFn,
+		"get_repo_variable":   getRepoActionVariableFn,
+		"list_org_variables":  listOrgActionVariablesFn,
+		"get_org_variable":    getOrgActionVariableFn,
+	})})
+	Tool.RegisterWrite(tool.ServerTool{Tool: ActionsConfigWriteTool, Handler: tool.Dispatch(map[string]tool.Handler{
+		"upsert_repo_secret":   upsertRepoActionSecretFn,
+		"delete_repo_secret":   deleteRepoActionSecretFn,
+		"upsert_org_secret":    upsertOrgActionSecretFn,
+		"delete_org_secret":    deleteOrgActionSecretFn,
+		"create_repo_variable": createRepoActionVariableFn,
+		"update_repo_variable": updateRepoActionVariableFn,
+		"delete_repo_variable": deleteRepoActionVariableFn,
+		"create_org_variable":  createOrgActionVariableFn,
+		"update_org_variable":  updateOrgActionVariableFn,
+		"delete_org_variable":  deleteOrgActionVariableFn,
+	})})
 }
 
 func listRepoActionSecretsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

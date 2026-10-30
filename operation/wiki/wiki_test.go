@@ -52,7 +52,7 @@ func TestWikiWriteBase64Encoding(t *testing.T) {
 				"title":     "TestPage",
 			}
 
-			result, err := wikiWriteFn(ctx, args)
+			result, err := Tool.WriteTools()[0].Handler(ctx, args)
 			if err != nil {
 				t.Fatalf("wikiWriteFn() error: %v", err)
 			}

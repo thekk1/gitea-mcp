@@ -22,7 +22,7 @@ Gitea 主机和访问令牌可通过命令行参数或环境变量提供，命�
 
 ### MCP 协议与 HTTP 传输
 
-服务器支持最高至 `2026-07-28` 的 MCP 协议，并向下协商到客户端的版本，仅声明 `tools` 能力。工具和 Gitea 执行失败会在 `tools/call` 结果中返回并设置 `result.isError: true`，格式错误的请求和服务器故障仍返回 JSON-RPC 错误。
+服务器支持最高至 `2026-07-28` 的 MCP 协议，并向下协商到客户端的版本，仅声明 `tools` 能力，并在 `instructions` 字段中描述自身，便于按需加载工具的客户端判断何时使用它。工具和 Gitea 执行失败会在 `tools/call` 结果中返回并设置 `result.isError: true`，格式错误的请求和服务器故障仍返回 JSON-RPC 错误。
 
 HTTP 传输固定为无状态：`/mcp` 仅接受 POST，没有 `Mcp-Session-Id`、独立 SSE 和 `Last-Event-ID` 断点续传。服务器会验证来源，反向代理必须原样转发 `Mcp-Protocol-Version`、`Mcp-Method` 和 `Mcp-Name`。`Authorization: Bearer <令牌>` 和 `Authorization: token <令牌>` 会在每个请求中传递 Gitea 凭据，这是凭据透传，而不是 MCP OAuth。被 Gitea 拒绝的凭据会收到 `401`，以便客户端刷新。
 
@@ -160,64 +160,51 @@ Cursor 等客户端可使用 stdio 命令：
 | search_users                 | search       | 读取 | 搜索用户 |
 | search_org_teams             | search       | 读取 | 搜索组织中的团队 |
 | search_repos                 | search       | 读取 | 搜索仓库 |
-| search_issues                | search       | 读取 | 跨仓库搜索问题和拉取请求 |
-| notification_read            | notification | 读取 | 读取通知：列出（可限定仓库）或按 ID 获取会话 |
-| notification_write           | notification | 写入 | 将某条或全部通知标记为已读 |
+| search_issues                | search       | 读取 | 跨仓库全文搜索问题和拉取请求 |
+| notification_read            | notification | 读取 | 列出通知或获取会话 |
+| notification_write           | notification | 写入 | 将通知标记为已读 |
 | label_read                   | label        | 读取 | 读取仓库或组织标签 |
-| label_write                  | label        | 写入 | 写入标签（仓库或组织）：创建、更新、删除 |
-| milestone_read               | milestone    | 读取 | 读取里程碑：获取单个或列出 |
-| milestone_write              | milestone    | 写入 | 写入里程碑：创建、更新、删除 |
-| wiki_read                    | wiki         | 读取 | 读取 Wiki：列出页面、获取内容、修订历史 |
-| wiki_write                   | wiki         | 写入 | 写入 Wiki 页面：创建、更新、删除 |
-| timetracking_read            | timetracking | 读取 | 读取时间跟踪：问题/仓库耗时、活动计时器、我的跟踪记录 |
-| timetracking_write           | timetracking | 写入 | 写入时间跟踪：计时器和记录条目 |
-| package_read                 | package      | 读取 | 读取软件包注册表：列出软件包、列出版本或获取某个版本 |
+| label_write                  | label        | 写入 | 写入仓库或组织标签 |
+| milestone_read               | milestone    | 读取 | 读取里程碑 |
+| milestone_write              | milestone    | 写入 | 写入里程碑 |
+| wiki_read                    | wiki         | 读取 | 读取 Wiki 页面和修订 |
+| wiki_write                   | wiki         | 写入 | 写入 Wiki 页面 |
+| timetracking_read            | timetracking | 读取 | 读取跟踪时间和计时器 |
+| timetracking_write           | timetracking | 写入 | 写入计时器和跟踪时间 |
+| package_read                 | package      | 读取 | 读取软件包和版本 |
 | package_write                | package      | 写入 | 删除软件包版本（不可恢复） |
 | project_read                 | project      | 读取 | 读取项目、列及列中的议题 |
 | project_write                | project      | 写入 | 写入项目、列及议题所在列 |
 | list_issues                  | issue        | 读取 | 列出仓库问题 |
-| attachment_read              | issue        | 读取 | 读取问题/评论附件：列出元数据、获取元数据或下载内容 |
-| issue_read                   | issue        | 读取 | 读取问题：详情、评论、标签、依赖或可指派用户 |
-| issue_write                  | issue        | 写入 | 写入问题：创建、更新、管理评论、标签和依赖 |
+| issue_read                   | issue        | 读取 | 读取问题及其评论、标签、依赖和附件 |
+| issue_write                  | issue        | 写入 | 写入问题、评论、标签、依赖和附件 |
 | list_pull_requests           | pull_request | 读取 | 列出仓库拉取请求 |
-| pull_request_read            | pull_request | 读取 | 读取拉取请求：详情、差异、变更文件、提交、头部提交状态、审查、审查评论、讨论评论、按分支或提交查找、可选审查者 |
-| pull_request_write           | pull_request | 写入 | 写入拉取请求：创建、更新、关闭、重新打开、合并、更新分支、管理审查者 |
-| pull_request_review_write    | pull_request | 写入 | 写入 PR 审查：创建、提交、删除、驳回、回复和解决审查评论 |
+| pull_request_read            | pull_request | 读取 | 读取拉取请求及其差异、文件、提交、状态、审查和评论，列出可选审查者，或按分支或提交查找 |
+| pull_request_write           | pull_request | 写入 | 创建、更新、合并、关闭或重新打开拉取请求，更新分支，管理审查者 |
+| pull_request_review_write    | pull_request | 写入 | 创建、提交、删除或驳回审查，回复和解决审查评论 |
 | actions_config_read          | actions      | 读取 | 读取 Actions 密钥和变量 |
-| actions_config_write         | actions      | 写入 | 写入 Actions 密钥和变量：更新插入、创建、更新、删除 |
+| actions_config_write         | actions      | 写入 | 写入 Actions 密钥和变量 |
 | actions_run_read             | actions      | 读取 | 读取 Actions 工作流、运行、作业、日志和构件 |
-| actions_run_write            | actions      | 写入 | 写入 Actions 运行：触发、取消、重新运行（整体或单个作业）、批准、启用/禁用工作流 |
-| create_repo                  | repository   | 写入 | 创建新仓库 |
-| fork_repo                    | repository   | 写入 | 复刻仓库 |
-| list_my_repos                | repository   | 读取 | 列出当前用户拥有的仓库 |
-| list_org_repos               | repository   | 读取 | 列出组织中的仓库 |
+| actions_run_write            | actions      | 写入 | 触发、取消、重新运行或批准 Actions 运行，启用/禁用工作流 |
+| repo_read                    | repository   | 读取 | 读取仓库，列出自己或组织的仓库，读取分支保护 |
+| repo_write                   | repository   | 写入 | 写入仓库（创建、复刻、设置、主题）和分支保护 |
 | get_repository_tree          | repository   | 读取 | 获取仓库文件树 |
 | get_file_contents            | file         | 读取 | 获取文件内容和元数据，或列出目录 |
 | get_dir_contents             | file         | 读取 | 获取目录中的条目 |
-| create_or_update_file        | file         | 写入 | 在单次提交中写入文件：创建、更新、重命名、删除 |
+| create_or_update_file        | file         | 写入 | 在单次提交中创建、更新、重命名或删除文件 |
 | delete_file                  | file         | 写入 | 删除文件 |
-| create_branch                | branch       | 写入 | 创建新分支 |
-| delete_branch                | branch       | 写入 | 删除分支 |
-| list_branches                | branch       | 读取 | 列出仓库分支 |
-| rename_branch                | branch       | 写入 | 重命名分支 |
-| create_tag                   | tag          | 写入 | 创建标签 |
-| delete_tag                   | tag          | 写入 | 删除标签 |
-| get_tag                      | tag          | 读取 | 获取标签详情 |
-| list_tags                    | tag          | 读取 | 列出仓库标签 |
-| list_commits                 | commit       | 读取 | 列出仓库提交 |
-| get_commit                   | commit       | 读取 | 获取提交详情，可附带差异 |
-| compare_commits              | commit       | 读取 | 比较两个引用：提交和变更文件 |
-| get_commit_status            | commit       | 读取 | 获取提交、分支或标签的合并状态 |
-| create_commit_status         | commit       | 写入 | 为提交创建状态 |
-| create_release               | release      | 写入 | 创建版本发布 |
-| delete_release               | release      | 写入 | 删除版本发布 |
-| get_release                  | release      | 读取 | 按 ID 获取版本发布 |
-| get_latest_release           | release      | 读取 | 获取最新版本发布 |
-| list_releases                | release      | 读取 | 列出仓库版本发布 |
+| branch_read                  | branch       | 读取 | 读取分支 |
+| branch_write                 | branch       | 写入 | 创建、删除或重命名分支 |
+| tag_read                     | tag          | 读取 | 读取标签 |
+| tag_write                    | tag          | 写入 | 创建或删除标签 |
+| commit_read                  | commit       | 读取 | 读取提交（可含差异）、组合状态，比较引用 |
+| commit_write                 | commit       | 写入 | 创建提交状态 |
+| release_read                 | release      | 读取 | 按 ID、标签或最新读取版本发布，列出或下载附件 |
+| release_write                | release      | 写入 | 写入版本发布，上传或删除附件 |
 
 > **说明：** 部分工具是聚合的、基于操作的工具，单个工具通过 `method` 参数暴露多个操作。当服务器以只读模式运行时（`-r` / `GITEA_READONLY`），访问为「写入」的工具会被隐藏；可通过 `-S` / `--scope`（`GITEA_SCOPES`）按范围过滤，或通过 `-O` / `--tools`（`GITEA_TOOLS`）按工具名称过滤对外暴露的工具集合。
 
-未设置任一参数时，会加载所有工具；仅设置 `--scope` 时，会加载这些范围内的所有工具；仅设置 `--tools` 时，只会加载指定名称的工具；两者都设置时，会加载所选范围的工具与指定工具名称的并集。范围名称即上表「范围」列中的值，未知的范围名称仅会在启动时产生警告并被忽略。
+未设置任一参数时，会加载所有工具；仅设置 `--scope` 时，会加载这些范围内的所有工具；仅设置 `--tools` 时，只会加载指定名称的工具；两者都设置时，会加载所选范围的工具与指定工具名称的并集。范围名称即上表「范围」列中的值，未知的范围名称仅会在启动时产生警告并被忽略。因合并而移除的工具名称（如 `list_branches`）在 `--tools` 中仍然有效，只启用替代工具中对应的方法，并记录弃用警告。
 
 ```bash
 gitea-mcp -S issue,pull_request

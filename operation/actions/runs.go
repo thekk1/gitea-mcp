@@ -27,11 +27,11 @@ const (
 var (
 	ActionsRunReadTool = tool.NewDefinition(
 		ActionsRunReadToolName,
-		"Read Actions workflows, runs, jobs, logs, and artifacts.",
+		"Read Actions workflows, runs, jobs, logs and artifacts.",
 		annotation.ReadOnly("Read Actions workflow, run, job, and artifact data"),
 		tool.String("method", tool.Required(), tool.Enum("list_workflows", "get_workflow", "list_runs", "get_run", "list_jobs", "list_run_jobs", "get_job", "get_job_log_preview", "download_job_log", "list_artifacts", "list_run_artifacts", "get_artifact", "download_artifact")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("workflow_id", tool.Description("ID or filename (for 'get_workflow')")),
 		tool.Number("run_id", tool.Description("for 'get_run'/'list_run_jobs'/'list_run_artifacts'")),
 		tool.Number("job_id", tool.Description("for 'get_job'/log methods")),
@@ -43,17 +43,17 @@ var (
 		tool.Number("tail_lines", tool.Description("log tail lines"), tool.Default(200), tool.Minimum(1)),
 		tool.Number("max_bytes", tool.Description("max log bytes"), tool.Default(65536), tool.Minimum(1024)),
 		tool.String("output_path", tool.Description("for 'download_job_log'/'download_artifact'")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1), tool.Minimum(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30), tool.Minimum(1)),
+		tool.Number("page", tool.Default(1), tool.Minimum(1)),
+		tool.Number("per_page", tool.Default(30), tool.Minimum(1)),
 	)
 
 	ActionsRunWriteTool = tool.NewDefinition(
 		ActionsRunWriteToolName,
-		"Write Actions runs: dispatch, cancel, rerun a run, one job or only its failed jobs, approve a run, enable or disable a workflow.",
-		annotation.Write("Trigger, cancel, rerun, or approve Actions workflows"),
-		tool.String("method", tool.Required(), tool.Enum("dispatch_workflow", "cancel_run", "rerun_run", "rerun_job", "rerun_failed_jobs", "approve_run", "enable_workflow", "disable_workflow")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		"Dispatch, cancel, delete, rerun or approve Actions runs, enable or disable workflows.",
+		annotation.Write("Trigger, cancel, delete, rerun, or approve Actions workflows"),
+		tool.String("method", tool.Required(), tool.Enum("dispatch_workflow", "cancel_run", "delete_run", "rerun_run", "rerun_job", "rerun_failed_jobs", "approve_run", "enable_workflow", "disable_workflow")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("workflow_id", tool.Description("ID or filename (for 'dispatch_workflow'/'enable_workflow'/'disable_workflow')")),
 		tool.String("ref", tool.Description("branch or tag (for 'dispatch_workflow')")),
 		tool.Object("inputs", tool.Description("for 'dispatch_workflow'")),
@@ -63,72 +63,36 @@ var (
 )
 
 func init() {
-	Tool.RegisterRead(tool.ServerTool{Tool: ActionsRunReadTool, Handler: runReadFn})
-	Tool.RegisterWrite(tool.ServerTool{Tool: ActionsRunWriteTool, Handler: runWriteFn})
-}
-
-func runReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "list_workflows":
-		return listRepoActionWorkflowsFn(ctx, args)
-	case "get_workflow":
-		return getRepoActionWorkflowFn(ctx, args)
-	case "list_runs":
-		return listRepoActionRunsFn(ctx, args)
-	case "get_run":
-		return getRepoActionRunFn(ctx, args)
-	case "list_jobs":
-		return listRepoActionJobsFn(ctx, args)
-	case "list_run_jobs":
-		return listRepoActionRunJobsFn(ctx, args)
-	case "get_job":
-		return getRepoActionJobFn(ctx, args)
-	case "get_job_log_preview":
-		return getRepoActionJobLogPreviewFn(ctx, args)
-	case "download_job_log":
-		return downloadRepoActionJobLogFn(ctx, args)
-	case "list_artifacts":
-		return listRepoActionArtifactsFn(ctx, args)
-	case "list_run_artifacts":
-		return listRepoActionRunArtifactsFn(ctx, args)
-	case "get_artifact":
-		return getRepoActionArtifactFn(ctx, args)
-	case "download_artifact":
-		return downloadRepoActionArtifactFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func runWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "dispatch_workflow":
-		return dispatchRepoActionWorkflowFn(ctx, args)
-	case "cancel_run":
-		return cancelRepoActionRunFn(ctx, args)
-	case "rerun_run":
-		return rerunRepoActionRunFn(ctx, args)
-	case "rerun_job":
-		return rerunRepoActionJobFn(ctx, args)
-	case "rerun_failed_jobs":
-		return rerunRepoActionFailedJobsFn(ctx, args)
-	case "approve_run":
-		return approveRepoActionRunFn(ctx, args)
-	case "enable_workflow":
-		return setRepoActionWorkflowEnabledFn(ctx, args, true)
-	case "disable_workflow":
-		return setRepoActionWorkflowEnabledFn(ctx, args, false)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
+	Tool.RegisterRead(tool.ServerTool{Tool: ActionsRunReadTool, Handler: tool.Dispatch(map[string]tool.Handler{
+		"list_workflows":      listRepoActionWorkflowsFn,
+		"get_workflow":        getRepoActionWorkflowFn,
+		"list_runs":           listRepoActionRunsFn,
+		"get_run":             getRepoActionRunFn,
+		"list_jobs":           listRepoActionJobsFn,
+		"list_run_jobs":       listRepoActionRunJobsFn,
+		"get_job":             getRepoActionJobFn,
+		"get_job_log_preview": getRepoActionJobLogPreviewFn,
+		"download_job_log":    downloadRepoActionJobLogFn,
+		"list_artifacts":      listRepoActionArtifactsFn,
+		"list_run_artifacts":  listRepoActionRunArtifactsFn,
+		"get_artifact":        getRepoActionArtifactFn,
+		"download_artifact":   downloadRepoActionArtifactFn,
+	})})
+	Tool.RegisterWrite(tool.ServerTool{Tool: ActionsRunWriteTool, Handler: tool.Dispatch(map[string]tool.Handler{
+		"dispatch_workflow": dispatchRepoActionWorkflowFn,
+		"cancel_run":        cancelRepoActionRunFn,
+		"delete_run":        deleteRepoActionRunFn,
+		"rerun_run":         rerunRepoActionRunFn,
+		"rerun_job":         rerunRepoActionJobFn,
+		"rerun_failed_jobs": rerunRepoActionFailedJobsFn,
+		"approve_run":       approveRepoActionRunFn,
+		"enable_workflow": func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+			return setRepoActionWorkflowEnabledFn(ctx, args, true)
+		},
+		"disable_workflow": func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+			return setRepoActionWorkflowEnabledFn(ctx, args, false)
+		},
+	})})
 }
 
 func doJSONWithFallback(ctx context.Context, method string, paths []string, query url.Values, body, respOut any) error {
@@ -337,6 +301,17 @@ func cancelRepoActionRunFn(ctx context.Context, args map[string]any) (*mcp.CallT
 	return to.TextResult(map[string]any{"message": "run cancellation requested"})
 }
 
+func deleteRepoActionRunFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, runID, err := runArgs(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	if _, err := gitea.DoJSON(ctx, "DELETE", fmt.Sprintf("repos/%s/%s/actions/runs/%d", url.PathEscape(owner), url.PathEscape(repo), runID), nil, nil, nil); err != nil {
+		return to.ErrorResult(fmt.Errorf("delete action run err: %v", err))
+	}
+	return to.TextResult(map[string]any{"message": "run deleted"})
+}
+
 func rerunRepoActionRunFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	owner, err := params.GetString(args, "owner")
 	if err != nil {
@@ -370,10 +345,7 @@ func rerunRepoActionRunFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 
 // runArgs reads the owner, repo and run_id that every run write method needs.
 func runArgs(args map[string]any) (owner, repo string, runID int64, err error) {
-	if owner, err = params.GetString(args, "owner"); err != nil {
-		return "", "", 0, err
-	}
-	if repo, err = params.GetString(args, "repo"); err != nil {
+	if owner, repo, err = params.GetRepo(args); err != nil {
 		return "", "", 0, err
 	}
 	if runID, err = params.GetIndex(args, "run_id"); err != nil || runID <= 0 {

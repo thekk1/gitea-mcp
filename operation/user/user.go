@@ -26,21 +26,21 @@ var Tool = tool.New("user")
 var (
 	GetMyUserInfoTool = tool.NewDefinition(
 		GetMyUserInfoToolName,
-		"Get current user",
+		"Get the authenticated user.",
 		annotation.ReadOnly("Get current user information"),
 	)
 
 	GetUserOrgsTool = tool.NewDefinition(
 		GetUserOrgsToolName,
-		"List current user's organizations",
+		"List your organizations.",
 		annotation.ReadOnly("Get user organizations"),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	CreateOrganizationTool = tool.NewDefinition(
 		CreateOrganizationToolName,
-		"Create a new organization.",
+		"Create an organization.",
 		annotation.Write("Create an organization"),
 		tool.String("username", tool.Required(), tool.Description("organization name")),
 		tool.String("full_name"),

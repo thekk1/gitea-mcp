@@ -3,6 +3,7 @@
 - PR descriptions: minimal, only what and why, no task lists or file listings
 - Reference issues and PRs by full URL, not by number
 - Use Conventional Commits for commit messages and PR titles, e.g. `type(scope): subject`; `!` before the colon if breaking. Use `test` type for test-only changes.
+- Breaking changes are only those that force deployments to update their config, like renamed flags or environment variables. Changes to tools, methods, parameters, results and scopes are never breaking, also when named in `--tools` or `--scope`
 - Add an `Assisted-by: AGENT_NAME:MODEL_VERSION` trailer to commit messages, never `Co-Authored-By` or `Signed-off-by`
 - Attribute agent authorship on one trailing line in issue and pull request comments, never as a PR description section
 - Never force-push, amend, or squash unless asked. Use new commits and normal push for pull request updates

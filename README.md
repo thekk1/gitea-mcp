@@ -22,7 +22,7 @@ Pass the Gitea host and access token as command-line flags or environment variab
 
 ### MCP protocol and HTTP transport
 
-The server supports MCP up to `2026-07-28` and negotiates down to the client's version, advertising only the `tools` capability. Tool and Gitea failures return a `tools/call` result with `result.isError: true`, while malformed requests and server faults stay JSON-RPC errors.
+The server supports MCP up to `2026-07-28` and negotiates down to the client's version, advertising only the `tools` capability and describing itself in the `instructions` field so clients that load tools on demand know when to use it. Tool and Gitea failures return a `tools/call` result with `result.isError: true`, while malformed requests and server faults stay JSON-RPC errors.
 
 HTTP is always stateless: `/mcp` accepts POST only, without `Mcp-Session-Id`, standalone SSE or `Last-Event-ID` resumability. Origins are validated, and reverse proxies must forward `Mcp-Protocol-Version`, `Mcp-Method` and `Mcp-Name` unchanged. `Authorization: Bearer <token>` and `Authorization: token <token>` pass a Gitea credential per request, which is credential passthrough rather than MCP OAuth. Credentials Gitea rejects get a `401`, so clients can refresh them.
 
@@ -160,64 +160,51 @@ Once configured, try `list all my repositories` in the chat box.
 | search_users                 | search       | Read   | Search for users |
 | search_org_teams             | search       | Read   | Search teams within an organization |
 | search_repos                 | search       | Read   | Search for repositories |
-| search_issues                | search       | Read   | Search issues and pull requests across repositories |
-| notification_read            | notification | Read   | Read notifications: list (optionally scoped to a repo) or get a thread by ID |
-| notification_write           | notification | Write  | Mark a notification or all notifications as read |
+| search_issues                | search       | Read   | Full-text search of issues and pull requests across repositories |
+| notification_read            | notification | Read   | List notifications or get a thread |
+| notification_write           | notification | Write  | Mark notifications as read |
 | label_read                   | label        | Read   | Read repository or organization labels |
-| label_write                  | label        | Write  | Write labels (repo or org): create, update, delete |
-| milestone_read               | milestone    | Read   | Read milestones: get one or list |
-| milestone_write              | milestone    | Write  | Write milestones: create, update, delete |
-| wiki_read                    | wiki         | Read   | Read wiki: list pages, get content, revision history |
-| wiki_write                   | wiki         | Write  | Write wiki pages: create, update, delete |
-| timetracking_read            | timetracking | Read   | Read time tracking: issue/repo times, active stopwatches, your tracked times |
-| timetracking_write           | timetracking | Write  | Write time tracking: stopwatches and entries |
-| package_read                 | package      | Read   | Read package registry: list packages, list versions, or get a version |
+| label_write                  | label        | Write  | Write repository or organization labels |
+| milestone_read               | milestone    | Read   | Read milestones |
+| milestone_write              | milestone    | Write  | Write milestones |
+| wiki_read                    | wiki         | Read   | Read wiki pages and revisions |
+| wiki_write                   | wiki         | Write  | Write wiki pages |
+| timetracking_read            | timetracking | Read   | Read tracked times and stopwatches |
+| timetracking_write           | timetracking | Write  | Write stopwatches and tracked times |
+| package_read                 | package      | Read   | Read packages and versions |
 | package_write                | package      | Write  | Delete a package version (irreversible) |
 | project_read                 | project      | Read   | Read projects, columns and column issues |
 | project_write                | project      | Write  | Write projects, columns and issue placement |
 | list_issues                  | issue        | Read   | List repository issues |
-| attachment_read              | issue        | Read   | Read issue/comment attachments: list metadata, get metadata, or download content |
-| issue_read                   | issue        | Read   | Read issue: details, comments, labels, dependencies, or assignee candidates |
-| issue_write                  | issue        | Write  | Write issues: create, update, manage comments, labels and dependencies |
+| issue_read                   | issue        | Read   | Read an issue with its comments, labels, dependencies and attachments |
+| issue_write                  | issue        | Write  | Write issues, comments, labels, dependencies and attachments |
 | list_pull_requests           | pull_request | Read   | List repository pull requests |
-| pull_request_read            | pull_request | Read   | Read pull request: details, diff, files, commits, status, reviews, review comments, discussion comments, lookup by branches or commit, reviewer candidates |
-| pull_request_write           | pull_request | Write  | Write pull requests: create, update, close, reopen, merge, update branch, manage reviewers |
-| pull_request_review_write    | pull_request | Write  | Write PR reviews: create, submit, delete, dismiss, reply to and resolve review comments |
+| pull_request_read            | pull_request | Read   | Read a pull request with its diff, files, commits, status, reviews and comments, list reviewer candidates, or find one by branches or commit |
+| pull_request_write           | pull_request | Write  | Create, update, merge, close or reopen pull requests, update their branch, manage reviewers |
+| pull_request_review_write    | pull_request | Write  | Create, submit, delete or dismiss reviews, reply to and resolve review comments |
 | actions_config_read          | actions      | Read   | Read Actions secrets and variables |
-| actions_config_write         | actions      | Write  | Write Actions secrets and variables: upsert, create, update, delete |
+| actions_config_write         | actions      | Write  | Write Actions secrets and variables |
 | actions_run_read             | actions      | Read   | Read Actions workflows, runs, jobs, logs, and artifacts |
-| actions_run_write            | actions      | Write  | Write Actions runs: dispatch, cancel, rerun runs or jobs, approve, enable/disable workflows |
-| create_repo                  | repository   | Write  | Create a new repository |
-| fork_repo                    | repository   | Write  | Fork a repository |
-| list_my_repos                | repository   | Read   | List repositories owned by the current user |
-| list_org_repos               | repository   | Read   | List repositories in an organization |
+| actions_run_write            | actions      | Write  | Dispatch, cancel, rerun or approve Actions runs, toggle workflows |
+| repo_read                    | repository   | Read   | Read a repository, list yours or an org's, read branch protections |
+| repo_write                   | repository   | Write  | Write repositories (create, fork, settings, topics) and branch protections |
 | get_repository_tree          | repository   | Read   | Get the repository file tree |
 | get_file_contents            | file         | Read   | Get file content and metadata, or list a directory |
 | get_dir_contents             | file         | Read   | Get the entries in a directory |
-| create_or_update_file        | file         | Write  | Write files in one commit: create, update, rename, delete |
+| create_or_update_file        | file         | Write  | Create, update, rename or delete files in one commit |
 | delete_file                  | file         | Write  | Delete a file |
-| create_branch                | branch       | Write  | Create a new branch |
-| delete_branch                | branch       | Write  | Delete a branch |
-| list_branches                | branch       | Read   | List repository branches |
-| rename_branch                | branch       | Write  | Rename a branch |
-| create_tag                   | tag          | Write  | Create a tag |
-| delete_tag                   | tag          | Write  | Delete a tag |
-| get_tag                      | tag          | Read   | Get tag details |
-| list_tags                    | tag          | Read   | List repository tags |
-| list_commits                 | commit       | Read   | List repository commits |
-| get_commit                   | commit       | Read   | Get commit details, optionally with its diff |
-| compare_commits              | commit       | Read   | Compare two refs: commits and changed files |
-| get_commit_status            | commit       | Read   | Get the combined status of a commit, branch or tag |
-| create_commit_status         | commit       | Write  | Create a status on a commit |
-| create_release               | release      | Write  | Create a release |
-| delete_release               | release      | Write  | Delete a release |
-| get_release                  | release      | Read   | Get a release by ID |
-| get_latest_release           | release      | Read   | Get the latest release |
-| list_releases                | release      | Read   | List repository releases |
+| branch_read                  | branch       | Read   | Read branches |
+| branch_write                 | branch       | Write  | Create, delete or rename branches |
+| tag_read                     | tag          | Read   | Read tags |
+| tag_write                    | tag          | Write  | Create or delete tags |
+| commit_read                  | commit       | Read   | Read commits with optional diff, combined statuses, compare refs |
+| commit_write                 | commit       | Write  | Create a commit status |
+| release_read                 | release      | Read   | Read releases by ID, tag or latest, list or download assets |
+| release_write                | release      | Write  | Write releases, upload or delete assets |
 
 > **Note:** Several tools are consolidated, action-based tools, a single tool exposes multiple operations through a `method` parameter. Tools with `Write` access are hidden when the server runs in read-only mode (`-r` / `GITEA_READONLY`), and the exposed tool set can be filtered by scope with `-S` / `--scope` (`GITEA_SCOPES`) and/or by individual tool name with `-O` / `--tools` (`GITEA_TOOLS`).
 
-With neither flag set, every tool loads. `--scope` limits loading to tools whose Scope column value is in the given list; `--tools` limits loading to the named tools; setting both loads the union of the selected scopes and the individually named tools. Unknown scope names are ignored with a startup warning.
+With neither flag set, every tool loads. `--scope` limits loading to tools whose Scope column value is in the given list; `--tools` limits loading to the named tools; setting both loads the union of the selected scopes and the individually named tools. Unknown scope names are ignored with a startup warning. Tool names removed by consolidation, like `list_branches`, still work in `--tools`, enabling only the matching methods of their replacement tool, and log a deprecation warning.
 
 ```bash
 gitea-mcp -S issue,pull_request

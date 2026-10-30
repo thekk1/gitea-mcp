@@ -32,13 +32,13 @@ var (
 		tool.String("repo", tool.Description("for repo methods")),
 		tool.String("org", tool.Description("for org methods")),
 		tool.Number("id", tool.Description("label ID (for 'get_repo_label')")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	LabelWriteTool = tool.NewDefinition(
 		LabelWriteToolName,
-		"Write labels (repo or org): create, edit, delete.",
+		"Write repo or org labels.",
 		annotation.Destructive("Create, update, or delete labels"),
 		tool.String("method", tool.Required(), tool.Enum("create_repo_label", "update_repo_label", "delete_repo_label", "create_org_label", "update_org_label", "delete_org_label")),
 		tool.String("owner", tool.Description("for repo methods")),
@@ -55,53 +55,24 @@ var (
 
 func init() {
 	Tool.RegisterRead(tool.ServerTool{
-		Tool:    LabelReadTool,
-		Handler: labelReadFn,
+		Tool: LabelReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"list_repo_labels": listRepoLabelsFn,
+			"get_repo_label":   getRepoLabelFn,
+			"list_org_labels":  listOrgLabelsFn,
+		}),
 	})
 	Tool.RegisterWrite(tool.ServerTool{
-		Tool:    LabelWriteTool,
-		Handler: labelWriteFn,
+		Tool: LabelWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create_repo_label": createRepoLabelFn,
+			"update_repo_label": editRepoLabelFn,
+			"delete_repo_label": deleteRepoLabelFn,
+			"create_org_label":  createOrgLabelFn,
+			"update_org_label":  editOrgLabelFn,
+			"delete_org_label":  deleteOrgLabelFn,
+		}),
 	})
-}
-
-func labelReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "list_repo_labels":
-		return listRepoLabelsFn(ctx, args)
-	case "get_repo_label":
-		return getRepoLabelFn(ctx, args)
-	case "list_org_labels":
-		return listOrgLabelsFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func labelWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "create_repo_label":
-		return createRepoLabelFn(ctx, args)
-	case "update_repo_label":
-		return editRepoLabelFn(ctx, args)
-	case "delete_repo_label":
-		return deleteRepoLabelFn(ctx, args)
-	case "create_org_label":
-		return createOrgLabelFn(ctx, args)
-	case "update_org_label":
-		return editOrgLabelFn(ctx, args)
-	case "delete_org_label":
-		return deleteOrgLabelFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
 }
 
 func listRepoLabelsFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

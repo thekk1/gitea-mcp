@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/gitea"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -635,119 +636,50 @@ func Test_editPullRequestFn_draft(t *testing.T) {
 
 func Test_getPullRequestDiffFn(t *testing.T) {
 	const (
-		owner   = "octo"
-		repo    = "demo"
-		index   = 12
-		diffRaw = "diff --git a/file.txt b/file.txt\n+line\n"
+		renamed = "diff --git a/old.txt b/new.txt\nrename from old.txt\nrename to new.txt\n"
+		spaced  = "diff --git a/café.md x b/café.md x\n+line\n"
+		changed = "diff --git a/café.md b/café.md\n+line\n"
+		tabbed  = "diff --git \"a/a\\tb\" \"b/a\\tb\"\n+line\n"
+		quoted  = "diff --git \"a/del\\177\" \"b/del\\177\"\n+line\n"
 	)
+	serveStub(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/octo/demo/pulls/12.diff" || r.URL.Query().Get("binary") != "true" {
+			http.Error(w, "unexpected request "+r.URL.String(), http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(renamed + spaced + changed + quoted + tabbed))
+	})
 
-	indexInputs := []struct {
-		name string
-		val  any
+	for _, test := range []struct {
+		path, want string
 	}{
-		{"float64", float64(index)},
-		{"string", "12"},
-	}
-
-	for _, ii := range indexInputs {
-		t.Run(ii.name, func(t *testing.T) {
-			var (
-				mu            sync.Mutex
-				diffRequested bool
-				binaryValue   string
-			)
-			errCh := make(chan error, 1)
-
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/api/v1/version":
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write([]byte(`{"version":"1.12.0"}`))
-				case fmt.Sprintf("/api/v1/repos/%s/%s", owner, repo):
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write([]byte(`{"private":false}`))
-				case fmt.Sprintf("/%s/%s/pulls/%d.diff", owner, repo, index):
-					if r.Method != http.MethodGet {
-						select {
-						case errCh <- fmt.Errorf("unexpected method: %s", r.Method):
-						default:
-						}
-					}
-					mu.Lock()
-					diffRequested = true
-					binaryValue = r.URL.Query().Get("binary")
-					mu.Unlock()
-					w.Header().Set("Content-Type", "text/plain")
-					_, _ = w.Write([]byte(diffRaw))
-				default:
-					select {
-					case errCh <- fmt.Errorf("unexpected request path: %s", r.URL.Path):
-					default:
-					}
-				}
+		{"", renamed + spaced + changed + quoted + tabbed},
+		{"old.txt", renamed},
+		{"new.txt", renamed},
+		{"café.md", changed},
+		{"del\x7f", quoted},
+		{"a\tb", tabbed},
+		{"missing.txt", ""},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			result, err := getPullRequestDiffFn(context.Background(), map[string]any{
+				"owner": "octo", "repo": "demo", "pull_number": float64(12), "binary": true, "path": test.path,
 			})
-
-			server := httptest.NewServer(handler)
-			defer server.Close()
-
-			origHost := flag.Host
-			origToken := flag.Token
-			origVersion := flag.Version
-			flag.Host = server.URL
-			flag.Token = ""
-			flag.Version = "test"
-			defer func() {
-				flag.Host = origHost
-				flag.Token = origToken
-				flag.Version = origVersion
-			}()
-
-			args := map[string]any{
-				"owner":       owner,
-				"repo":        repo,
-				"pull_number": ii.val,
-				"binary":      true,
-			}
-
-			result, err := getPullRequestDiffFn(context.Background(), args)
 			if err != nil {
-				t.Fatalf("getPullRequestDiffFn() error = %v", err)
+				t.Fatal(err)
 			}
-
-			select {
-			case reqErr := <-errCh:
-				t.Fatalf("handler error: %v", reqErr)
-			default:
+			if result.IsError != (test.want == "") {
+				t.Fatalf("IsError = %v, content %v", result.IsError, result.Content)
 			}
-
-			mu.Lock()
-			requested := diffRequested
-			gotBinary := binaryValue
-			mu.Unlock()
-
-			if !requested {
-				t.Fatalf("expected diff request to be made")
+			if test.want == "" {
+				return
 			}
-			if gotBinary != "true" {
-				t.Fatalf("expected binary=true query param, got %q", gotBinary)
+			var got string
+			if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
+				t.Fatal(err)
 			}
-
-			if len(result.Content) == 0 {
-				t.Fatalf("expected content in result")
-			}
-
-			textContent, ok := result.Content[0].(*mcp.TextContent)
-			if !ok {
-				t.Fatalf("expected text content, got %T", result.Content[0])
-			}
-
-			// The diff response is now a plain string
-			var parsed string
-			if err := json.Unmarshal([]byte(textContent.Text), &parsed); err != nil {
-				t.Fatalf("unmarshal result text: %v", err)
-			}
-			if parsed != diffRaw {
-				t.Fatalf("diff = %q, want %q", parsed, diffRaw)
+			if got != test.want {
+				t.Errorf("diff = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -1082,7 +1014,7 @@ func Test_pullRequestReviewWriteFn_comments(t *testing.T) {
 				"body":        "sure",
 			}
 
-			result, err := pullRequestReviewWriteFn(context.Background(), args)
+			result, err := Tool.WriteTools()[1].Handler(context.Background(), args)
 			if err != nil {
 				t.Fatalf("pullRequestReviewWriteFn() error = %v", err)
 			}
@@ -1135,7 +1067,7 @@ func Test_listPullRequestReviewCommentsFn_allReviews(t *testing.T) {
 		"pull_number": float64(index),
 	}
 
-	result, err := pullRequestReadFn(context.Background(), args)
+	result, err := Tool.ReadTools()[1].Handler(context.Background(), args)
 	if err != nil {
 		t.Fatalf("pullRequestReadFn() error = %v", err)
 	}
@@ -1157,7 +1089,7 @@ func Test_pullRequestReadFn_getComments(t *testing.T) {
 		_, _ = w.Write([]byte(`[]`))
 	})
 
-	result, err := pullRequestReadFn(context.Background(), map[string]any{
+	result, err := Tool.ReadTools()[1].Handler(context.Background(), map[string]any{
 		"method": "get_comments", "owner": "octo", "repo": "demo", "pull_number": float64(7),
 	})
 	if err != nil || result.IsError {
@@ -1178,15 +1110,15 @@ func Test_pullRequestReadFn_getStatusWaitsWhileEmptyOrPending(t *testing.T) {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 	})
-	origPollInterval := statusPollInterval
-	statusPollInterval = time.Millisecond
-	t.Cleanup(func() { statusPollInterval = origPollInterval })
+	origPollInterval := gitea.StatusPollInterval
+	gitea.StatusPollInterval = time.Millisecond
+	t.Cleanup(func() { gitea.StatusPollInterval = origPollInterval })
 
 	for _, call := range []struct {
 		waitSeconds float64
 		wantState   string
 	}{{-1e10, `"state":""`}, {5, `"state":"success"`}} {
-		result, err := pullRequestReadFn(context.Background(), map[string]any{
+		result, err := Tool.ReadTools()[1].Handler(context.Background(), map[string]any{
 			"method": "get_status", "owner": "octo", "repo": "demo", "pull_number": float64(7), "wait_seconds": call.waitSeconds,
 		})
 		if err != nil || result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, call.wantState) {
@@ -1249,7 +1181,7 @@ func Test_pullRequestReadFn_lookupMethods(t *testing.T) {
 
 			args := map[string]any{"method": tc.method, "owner": "octo", "repo": "demo"}
 			maps.Copy(args, tc.args)
-			result, err := pullRequestReadFn(context.Background(), args)
+			result, err := Tool.ReadTools()[1].Handler(context.Background(), args)
 			if err != nil || result.IsError {
 				t.Fatalf("pullRequestReadFn() result = %v, error = %v", result, err)
 			}

@@ -199,6 +199,9 @@ func newMCPServer(version string) *mcp.Server {
 			Version: version,
 		},
 		&mcp.ServerOptions{
+			Instructions: "Work with a Gitea instance: repositories, files, branches, tags, commits, releases, issues, pull requests, " +
+				"reviews, labels, milestones, projects, wiki, Actions, packages, notifications and time tracking. " +
+				"Use these tools for any Gitea repository or URL. <scope>_read and <scope>_write tools select their operation with the `method` argument.",
 			Logger: log.Slog(),
 			Capabilities: &mcp.ServerCapabilities{
 				Tools: &mcp.ToolCapabilities{},

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"gitea.com/gitea/gitea-mcp/internal/flag"
+	"gitea.com/gitea/gitea-mcp/internal/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -272,7 +273,7 @@ func Test_getIssueByIndexFn_includesAttachments(t *testing.T) {
 	}
 }
 
-func Test_issueReadFn_commentsIncludeAttachments(t *testing.T) {
+func TestIssueReadCommentsIncludeAttachments(t *testing.T) {
 	const commentWithAsset = `{"id": 1, "body": "see this", "assets": [
 		{"id": 9, "name": "log.txt", "size": 200, "browser_download_url": "https://example/log.txt"}
 	]}`
@@ -297,9 +298,9 @@ func Test_issueReadFn_commentsIncludeAttachments(t *testing.T) {
 		{"method": "get_comment", "owner": "octo", "repo": "demo", "comment_id": float64(1)},
 	} {
 		t.Run(args["method"].(string), func(t *testing.T) {
-			res, err := issueReadFn(context.Background(), args)
+			res, err := issueToolHandler(t, IssueReadToolName)(context.Background(), args)
 			if err != nil || res.IsError {
-				t.Fatalf("issueReadFn() result = %v, error = %v", res, err)
+				t.Fatalf("issue_read result = %v, error = %v", res, err)
 			}
 			body := res.Content[0].(*mcp.TextContent).Text
 			if !strings.Contains(body, `[log.txt](https://example/log.txt)`) || strings.Contains(body, `"attachments"`) {
@@ -307,7 +308,7 @@ func Test_issueReadFn_commentsIncludeAttachments(t *testing.T) {
 			}
 		})
 	}
-	res, err := issueReadFn(context.Background(), map[string]any{"method": "get_comment", "owner": "octo", "repo": "demo", "comment_id": float64(5)})
+	res, err := issueToolHandler(t, IssueReadToolName)(context.Background(), map[string]any{"method": "get_comment", "owner": "octo", "repo": "demo", "comment_id": float64(5)})
 	if err != nil || !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "not a discussion comment") {
 		t.Fatalf("expected non-discussion comment error, got %v, %v", res, err)
 	}
@@ -340,26 +341,26 @@ func Test_issueDependencyMethods(t *testing.T) {
 		wantResult  string
 	}{
 		{
-			toolFn:      issueReadFn,
+			toolFn:      issueToolHandler(t, IssueReadToolName),
 			args:        map[string]any{"method": "get_blocked_by", "page": float64(2), "per_page": float64(10)},
 			wantRequest: "GET /api/v1/repos/octo/demo/issues/2/dependencies?limit=10&page=2",
 			wantResult:  "[" + blockerRef + "]",
 		},
 		{
-			toolFn:      issueReadFn,
+			toolFn:      issueToolHandler(t, IssueReadToolName),
 			args:        map[string]any{"method": "get_blocking"},
 			wantRequest: "GET /api/v1/repos/octo/demo/issues/2/blocks?limit=30&page=1",
 			wantResult:  "[" + blockerRef + "]",
 		},
 		{
-			toolFn:      issueWriteFn,
+			toolFn:      issueToolHandler(t, IssueWriteToolName),
 			args:        map[string]any{"method": "add_dependency", "dependency_type": "blocked_by", "related_owner": "acme", "related_repo": "infra", "related_issue_number": float64(1)},
 			wantRequest: "POST /api/v1/repos/octo/demo/issues/2/dependencies",
 			wantBody:    `{"index":1,"owner":"acme","repo":"infra"}`,
 			wantResult:  issueRef,
 		},
 		{
-			toolFn:      issueWriteFn,
+			toolFn:      issueToolHandler(t, IssueWriteToolName),
 			args:        map[string]any{"method": "remove_dependency", "dependency_type": "blocking", "related_owner": "", "related_issue_number": float64(3)},
 			wantRequest: "DELETE /api/v1/repos/octo/demo/issues/2/blocks",
 			wantBody:    `{"index":3,"owner":"octo","repo":"demo"}`,
@@ -383,13 +384,15 @@ func Test_issueDependencyMethods(t *testing.T) {
 	}
 }
 
-func Test_issueWriteFn_updateComment(t *testing.T) {
+func TestIssueWriteCommentMethods(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/version":
 			_, _ = w.Write([]byte(`{"version":"1.24.0"}`))
 		case "PATCH /api/v1/repos/octo/demo/issues/comments/42":
 			_, _ = w.Write([]byte(`{"id":42,"body":"new"}`))
+		case "DELETE /api/v1/repos/octo/demo/issues/comments/42":
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -398,17 +401,21 @@ func Test_issueWriteFn_updateComment(t *testing.T) {
 	defer func(host string) { flag.Host = host }(flag.Host)
 	flag.Host = server.URL
 
-	res, err := issueWriteFn(context.Background(), map[string]any{"method": "update_comment", "owner": "octo", "repo": "demo", "comment_id": float64(42), "body": "new"})
-	if err != nil || res.IsError {
-		t.Fatalf("issueWriteFn() result = %v, error = %v", res, err)
-	}
-	res, _ = issueWriteFn(context.Background(), map[string]any{"method": "update_comment", "owner": "octo", "repo": "demo", "commentID": float64(42), "body": "new"})
-	if !res.IsError {
-		t.Fatal("removed commentID alias must be rejected")
+	for name, args := range map[string]map[string]any{
+		"update_comment": {"method": "update_comment", "comment_id": float64(42), "body": "new"},
+		"delete_comment": {"method": "delete_comment", "comment_id": float64(42)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			args["owner"], args["repo"] = "octo", "demo"
+			res, err := issueToolHandler(t, IssueWriteToolName)(context.Background(), args)
+			if err != nil || res.IsError {
+				t.Fatalf("issue_write result = %v, error = %v", res, err)
+			}
+		})
 	}
 }
 
-func Test_issueReadFn_assigneeCandidates(t *testing.T) {
+func TestIssueReadAssigneeCandidates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/version":
@@ -423,11 +430,24 @@ func Test_issueReadFn_assigneeCandidates(t *testing.T) {
 	defer func(host string) { flag.Host = host }(flag.Host)
 	flag.Host = server.URL
 
-	res, err := issueReadFn(context.Background(), map[string]any{"method": "get_assignee_candidates", "owner": "octo", "repo": "demo"})
+	res, err := issueToolHandler(t, IssueReadToolName)(context.Background(), map[string]any{"method": "get_assignee_candidates", "owner": "octo", "repo": "demo"})
 	if err != nil || res.IsError {
-		t.Fatalf("issueReadFn() result = %v, error = %v", res, err)
+		t.Fatalf("issue_read result = %v, error = %v", res, err)
 	}
 	if body := res.Content[0].(*mcp.TextContent).Text; body != `[{"full_name":"Alice","login":"alice"}]` {
 		t.Fatalf("unexpected result: %s", body)
 	}
+}
+
+func issueToolHandler(t *testing.T, name string) tool.Handler {
+	t.Helper()
+	for _, tools := range [][]tool.ServerTool{Tool.ReadTools(), Tool.WriteTools()} {
+		for _, registered := range tools {
+			if registered.Tool.Name == name {
+				return registered.Handler
+			}
+		}
+	}
+	t.Fatalf("tool %q is not registered", name)
+	return nil
 }

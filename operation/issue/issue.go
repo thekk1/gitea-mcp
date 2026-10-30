@@ -43,10 +43,10 @@ const (
 var (
 	ListRepoIssuesTool = tool.NewDefinition(
 		ListRepoIssuesToolName,
-		"List issues in a repository (or pull requests, via the 'type' filter), filterable by state, labels, milestones, users, and update time range.",
+		"List repository issues or pull requests, filterable by state, labels, milestones, users and update time.",
 		annotation.ReadOnly("List repository issues"),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("state", tool.Default("all")),
 		tool.String("type", tool.Description("issues or pulls"), tool.Enum("issues", "pulls")),
 		tool.Array("labels", tool.Description("label name filter"), tool.Items(map[string]any{"type": "string"})),
@@ -56,37 +56,43 @@ var (
 		tool.String("created_by"),
 		tool.String("assigned_by", tool.Description("assignee username")),
 		tool.String("mentioned_by", tool.Description("mentioned username")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	IssueReadTool = tool.NewDefinition(
 		IssueReadToolName,
-		"Read issue: details, comments, labels, dependencies, or the users it can be assigned to.",
+		"Read an issue with its comments, labels, dependencies, assignee candidates and attachments.",
 		annotation.ReadOnly("Read issue details"),
-		tool.String("method", tool.Required(), tool.Enum("get", "get_comments", "get_comment", "get_labels", "get_blocked_by", "get_blocking", "get_assignee_candidates")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Number("issue_number", tool.Description("required except for 'get_comment'/'get_assignee_candidates'")),
-		tool.Number("comment_id", tool.Description("for 'get_comment'")),
-		tool.Number("page", tool.Description("for 'get_blocked_by'/'get_blocking'"), tool.Default(1)),
-		tool.Number("per_page", tool.Description("for 'get_blocked_by'/'get_blocking'"), tool.Default(30)),
+		tool.String("method", tool.Required(), tool.Enum("get", "get_comments", "get_comment", "get_labels", "get_blocked_by", "get_blocking", "get_assignee_candidates", "get_attachments", "get_attachment", "download_attachment")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.Number("issue_number", tool.Description("required except for get_comment, get_assignee_candidates, comment attachments or download_attachment with attachment_uuid")),
+		tool.Number("comment_id", tool.Description("required for get_comment, or scopes comment attachments")),
+		tool.Number("attachment_id", tool.Description("required for get_attachment, or download_attachment without attachment_uuid")),
+		tool.String("attachment_uuid", tool.Description("for download_attachment")),
+		tool.String("output_path", tool.Description("exact download destination")),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	IssueWriteTool = tool.NewDefinition(
 		IssueWriteToolName,
-		"Write issues: create, update, manage comments, labels and dependencies.",
-		annotation.Write("Create or update issues, comments, labels, and dependencies"),
-		tool.String("method", tool.Required(), tool.Enum("create", "update", "add_comment", "update_comment", "add_labels", "remove_label", "replace_labels", "clear_labels", "add_dependency", "remove_dependency")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
-		tool.Number("issue_number", tool.Description("required except for 'create'")),
+		"Write issues, comments, labels, dependencies and attachments.",
+		annotation.Write("Write issues, comments, labels, dependencies and attachments"),
+		tool.String("method", tool.Required(), tool.Enum("create", "update", "add_comment", "update_comment", "delete_comment", "add_labels", "remove_label", "replace_labels", "clear_labels", "add_dependency", "remove_dependency", "add_attachment", "delete_attachment")),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
+		tool.Number("issue_number", tool.Description("required except for create, update_comment, delete_comment or comment attachments")),
 		tool.String("title", tool.Description("required for 'create'")),
 		tool.String("body", tool.Description("required for 'add_comment'/'update_comment'")),
 		tool.Array("assignees", tool.Items(map[string]any{"type": "string"})),
 		tool.Number("milestone"),
 		tool.String("state", tool.Enum("open", "closed", "all")),
-		tool.Number("comment_id", tool.Description("for 'update_comment'")),
+		tool.Number("comment_id", tool.Description("required for update_comment/delete_comment, or scopes comment attachments")),
+		tool.Number("attachment_id", tool.Description("required for delete_attachment")),
+		tool.String("name", tool.Description("file name for add_attachment")),
+		tool.String("content", tool.Description("base64 file content for add_attachment")),
 		tool.Array("labels", tool.Description("label IDs"), tool.Items(map[string]any{"type": "number"})),
 		tool.Number("label_id", tool.Description("for 'remove_label'")),
 		tool.String("ref", tool.Description("branch to associate")),
@@ -107,69 +113,48 @@ func init() {
 		Handler: listRepoIssuesFn,
 	})
 	Tool.RegisterRead(tool.ServerTool{
-		Tool:    IssueReadTool,
-		Handler: issueReadFn,
+		Tool: IssueReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"get": getIssueByIndexFn,
+			"get_comments": func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+				return ListComments(ctx, args, "issue_number")
+			},
+			"get_comment": getIssueCommentFn,
+			"get_labels":  getIssueLabelsFn,
+			"get_blocked_by": func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+				return listIssueDependenciesFn(ctx, args, dependencyEndpoints["blocked_by"])
+			},
+			"get_blocking": func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+				return listIssueDependenciesFn(ctx, args, dependencyEndpoints["blocking"])
+			},
+			"get_assignee_candidates": listAssigneeCandidatesFn,
+			"get_attachments":         listAttachmentsFn,
+			"get_attachment":          getAttachmentFn,
+			"download_attachment":     downloadAttachmentFn,
+		}),
 	})
 	Tool.RegisterWrite(tool.ServerTool{
-		Tool:    IssueWriteTool,
-		Handler: issueWriteFn,
+		Tool: IssueWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create":         createIssueFn,
+			"update":         editIssueFn,
+			"add_comment":    createIssueCommentFn,
+			"update_comment": editIssueCommentFn,
+			"delete_comment": deleteIssueCommentFn,
+			"add_labels":     addIssueLabelsFn,
+			"remove_label":   removeIssueLabelFn,
+			"replace_labels": replaceIssueLabelsFn,
+			"clear_labels":   clearIssueLabelsFn,
+			"add_dependency": func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+				return writeIssueDependencyFn(ctx, args, "POST")
+			},
+			"remove_dependency": func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+				return writeIssueDependencyFn(ctx, args, "DELETE")
+			},
+			"add_attachment":    createAttachmentFn,
+			"delete_attachment": deleteAttachmentFn,
+		}),
 	})
-}
-
-func issueReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "get":
-		return getIssueByIndexFn(ctx, args)
-	case "get_comments":
-		return ListComments(ctx, args, "issue_number")
-	case "get_comment":
-		return getIssueCommentFn(ctx, args)
-	case "get_labels":
-		return getIssueLabelsFn(ctx, args)
-	case "get_blocked_by":
-		return listIssueDependenciesFn(ctx, args, dependencyEndpoints["blocked_by"])
-	case "get_blocking":
-		return listIssueDependenciesFn(ctx, args, dependencyEndpoints["blocking"])
-	case "get_assignee_candidates":
-		return listAssigneeCandidatesFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func issueWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "create":
-		return createIssueFn(ctx, args)
-	case "update":
-		return editIssueFn(ctx, args)
-	case "add_comment":
-		return createIssueCommentFn(ctx, args)
-	case "update_comment":
-		return editIssueCommentFn(ctx, args)
-	case "add_labels":
-		return addIssueLabelsFn(ctx, args)
-	case "remove_label":
-		return removeIssueLabelFn(ctx, args)
-	case "replace_labels":
-		return replaceIssueLabelsFn(ctx, args)
-	case "clear_labels":
-		return clearIssueLabelsFn(ctx, args)
-	case "add_dependency":
-		return writeIssueDependencyFn(ctx, args, "POST")
-	case "remove_dependency":
-		return writeIssueDependencyFn(ctx, args, "DELETE")
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
 }
 
 func getIssueByIndexFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -394,6 +379,25 @@ func editIssueCommentFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	}
 
 	return to.TextResult(slimComment(issueComment))
+}
+
+func deleteIssueCommentFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, repo, err := params.GetRepo(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	commentID, err := params.GetIndex(args, "comment_id")
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	client, err := gitea.ClientFromContext(ctx)
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	if _, err := client.Issues.DeleteIssueComment(ctx, owner, repo, commentID); err != nil {
+		return to.ErrorResult(fmt.Errorf("delete %v/%v/issues/comments/%v err: %v", owner, repo, commentID, err))
+	}
+	return to.TextResult("comment deleted")
 }
 
 func ListComments(ctx context.Context, args map[string]any, indexKey string) (*mcp.CallToolResult, error) {

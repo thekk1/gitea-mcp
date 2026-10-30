@@ -25,21 +25,21 @@ const (
 var (
 	WikiReadTool = tool.NewDefinition(
 		WikiReadToolName,
-		"Read wiki: list pages, get content, revision history.",
+		"Read wiki pages and revisions.",
 		annotation.ReadOnly("Read wiki pages"),
 		tool.String("method", tool.Required(), tool.Enum("list", "get", "get_revisions")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("page_name", tool.Description("for 'get'/'get_revisions'")),
 	)
 
 	WikiWriteTool = tool.NewDefinition(
 		WikiWriteToolName,
-		"Write wiki pages: create, update, delete.",
+		"Write wiki pages.",
 		annotation.Destructive("Create, update, or delete wiki pages"),
 		tool.String("method", tool.Required(), tool.Enum("create", "update", "delete")),
-		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+		tool.String("owner", tool.Required()),
+		tool.String("repo", tool.Required()),
 		tool.String("page_name", tool.Description("for 'update'/'delete'")),
 		tool.String("title", tool.Description("for 'create'")),
 		tool.String("content", tool.Description("for 'create'/'update'")),
@@ -49,47 +49,21 @@ var (
 
 func init() {
 	Tool.RegisterRead(tool.ServerTool{
-		Tool:    WikiReadTool,
-		Handler: wikiReadFn,
+		Tool: WikiReadTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"list":          listWikiPagesFn,
+			"get":           getWikiPageFn,
+			"get_revisions": getWikiRevisionsFn,
+		}),
 	})
 	Tool.RegisterWrite(tool.ServerTool{
-		Tool:    WikiWriteTool,
-		Handler: wikiWriteFn,
+		Tool: WikiWriteTool,
+		Handler: tool.Dispatch(map[string]tool.Handler{
+			"create": createWikiPageFn,
+			"update": updateWikiPageFn,
+			"delete": deleteWikiPageFn,
+		}),
 	})
-}
-
-func wikiReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "list":
-		return listWikiPagesFn(ctx, args)
-	case "get":
-		return getWikiPageFn(ctx, args)
-	case "get_revisions":
-		return getWikiRevisionsFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func wikiWriteFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "create":
-		return createWikiPageFn(ctx, args)
-	case "update":
-		return updateWikiPageFn(ctx, args)
-	case "delete":
-		return deleteWikiPageFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
 }
 
 func listWikiPagesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

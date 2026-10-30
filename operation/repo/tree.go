@@ -20,14 +20,14 @@ const (
 
 var GetRepoTreeTool = tool.NewDefinition(
 	GetRepoTreeToolName,
-	"Get the file tree of a repository at a given ref (SHA, branch, or tag), optionally recursively.",
+	"Get a repository's file tree.",
 	annotation.ReadOnly("Get repository file tree"),
-	tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
-	tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
+	tool.String("owner", tool.Required()),
+	tool.String("repo", tool.Required()),
 	tool.String("tree_sha", tool.Required(), tool.Description("SHA, branch, or tag")),
 	tool.Boolean("recursive"),
-	tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-	tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+	tool.Number("page", tool.Default(1)),
+	tool.Number("per_page", tool.Default(30)),
 )
 
 func init() {

@@ -25,23 +25,23 @@ const (
 var (
 	TimetrackingReadTool = tool.NewDefinition(
 		TimetrackingReadToolName,
-		"Read time tracking: issue times, repo times, active stopwatches, your tracked times.",
+		"Read tracked times and stopwatches.",
 		annotation.ReadOnly("Read tracked time"),
 		tool.String("method", tool.Required(), tool.Enum("list_issue_times", "list_repo_times", "get_my_stopwatches", "get_my_times")),
 		tool.String("owner", tool.Description("for list_* methods")),
 		tool.String("repo", tool.Description("for list_* methods")),
 		tool.Number("issue_number", tool.Description("for 'list_issue_times'")),
-		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
-		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
+		tool.Number("page", tool.Default(1)),
+		tool.Number("per_page", tool.Default(30)),
 	)
 
 	TimetrackingWriteTool = tool.NewDefinition(
 		TimetrackingWriteToolName,
-		"Write time tracking: stopwatches and entries.",
+		"Write stopwatches and tracked times.",
 		annotation.Write("Add or manage tracked time"),
 		tool.String("method", tool.Required(), tool.Enum("start_stopwatch", "stop_stopwatch", "delete_stopwatch", "add_time", "delete_time")),
-		tool.String("owner", tool.Description(params.OwnerDesc)),
-		tool.String("repo", tool.Description(params.RepoDesc)),
+		tool.String("owner"),
+		tool.String("repo"),
 		tool.Number("issue_number"),
 		tool.Number("time", tool.Description("seconds (for 'add_time')")),
 		tool.Number("id", tool.Description("entry ID (for 'delete_time')")),
@@ -49,48 +49,19 @@ var (
 )
 
 func init() {
-	Tool.RegisterRead(tool.ServerTool{Tool: TimetrackingReadTool, Handler: readFn})
-	Tool.RegisterWrite(tool.ServerTool{Tool: TimetrackingWriteTool, Handler: writeFn})
-}
-
-func readFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "list_issue_times":
-		return listTrackedTimesFn(ctx, args)
-	case "list_repo_times":
-		return listRepoTimesFn(ctx, args)
-	case "get_my_stopwatches":
-		return getMyStopwatchesFn(ctx, args)
-	case "get_my_times":
-		return getMyTimesFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
-}
-
-func writeFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	method, err := params.GetString(args, "method")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
-	switch method {
-	case "start_stopwatch":
-		return startStopwatchFn(ctx, args)
-	case "stop_stopwatch":
-		return stopStopwatchFn(ctx, args)
-	case "delete_stopwatch":
-		return deleteStopwatchFn(ctx, args)
-	case "add_time":
-		return addTrackedTimeFn(ctx, args)
-	case "delete_time":
-		return deleteTrackedTimeFn(ctx, args)
-	default:
-		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
-	}
+	Tool.RegisterRead(tool.ServerTool{Tool: TimetrackingReadTool, Handler: tool.Dispatch(map[string]tool.Handler{
+		"list_issue_times":   listTrackedTimesFn,
+		"list_repo_times":    listRepoTimesFn,
+		"get_my_stopwatches": getMyStopwatchesFn,
+		"get_my_times":       getMyTimesFn,
+	})})
+	Tool.RegisterWrite(tool.ServerTool{Tool: TimetrackingWriteTool, Handler: tool.Dispatch(map[string]tool.Handler{
+		"start_stopwatch":  startStopwatchFn,
+		"stop_stopwatch":   stopStopwatchFn,
+		"delete_stopwatch": deleteStopwatchFn,
+		"add_time":         addTrackedTimeFn,
+		"delete_time":      deleteTrackedTimeFn,
+	})})
 }
 
 func startStopwatchFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

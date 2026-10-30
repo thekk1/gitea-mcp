@@ -269,6 +269,9 @@ func TestOfficialSDKInMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
+	if !strings.Contains(session.InitializeResult().Instructions, "Gitea") {
+		t.Errorf("instructions = %q, want a Gitea server description", session.InitializeResult().Instructions)
+	}
 	if got := session.InitializeResult().ProtocolVersion; got != expectedProtocolVersion {
 		t.Errorf("protocol version = %q, want %q", got, expectedProtocolVersion)
 	}
