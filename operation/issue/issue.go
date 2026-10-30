@@ -15,6 +15,7 @@ import (
 	"gitea.com/gitea/gitea-mcp/internal/slim"
 	"gitea.com/gitea/gitea-mcp/internal/to"
 	"gitea.com/gitea/gitea-mcp/internal/tool"
+	"gitea.com/gitea/gitea-mcp/operation/label"
 
 	gitea_sdk "gitea.dev/sdk"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -93,8 +94,8 @@ var (
 		tool.Number("attachment_id", tool.Description("required for delete_attachment")),
 		tool.String("name", tool.Description("file name for add_attachment")),
 		tool.String("content", tool.Description("base64 file content for add_attachment")),
-		tool.Array("labels", tool.Description("label IDs"), tool.Items(map[string]any{"type": "number"})),
-		tool.Number("label_id", tool.Description("for 'remove_label'")),
+		tool.Array("labels", tool.Description("label names or IDs"), tool.Items(map[string]any{"type": "string"})),
+		tool.String("label_id", tool.Description("label name or ID (for 'remove_label')")),
 		tool.String("ref", tool.Description("branch to associate")),
 		tool.String("deadline", tool.Description("ISO 8601")),
 		tool.Boolean("remove_deadline"),
@@ -256,8 +257,10 @@ func createIssueFn(ctx context.Context, args map[string]any) (*mcp.CallToolResul
 			opt.Milestone = milestone
 		}
 	}
-	if labelIDs, err := params.GetInt64Slice(args, "labels"); err == nil {
-		opt.Labels = labelIDs
+	if args["labels"] != nil {
+		if opt.Labels, err = label.ResolveIDs(ctx, client, owner, repo, args["labels"]); err != nil {
+			return to.ErrorResult(err)
+		}
 	}
 	if ref, ok := args["ref"].(string); ok {
 		opt.Ref = ref
@@ -568,14 +571,14 @@ func addIssueLabelsFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	labels, err := params.GetInt64Slice(args, "labels")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
 
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	labels, err := label.ResolveIDs(ctx, client, owner, repo, args["labels"])
+	if err != nil {
+		return to.ErrorResult(err)
 	}
 	issueLabels, _, err := client.Issues.AddIssueLabels(ctx, owner, repo, index, gitea_sdk.IssueLabelsOption{Labels: labels})
 	if err != nil {
@@ -597,14 +600,14 @@ func replaceIssueLabelsFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	labels, err := params.GetInt64Slice(args, "labels")
-	if err != nil {
-		return to.ErrorResult(err)
-	}
 
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	labels, err := label.ResolveIDs(ctx, client, owner, repo, args["labels"])
+	if err != nil {
+		return to.ErrorResult(err)
 	}
 	issueLabels, _, err := client.Issues.ReplaceIssueLabels(ctx, owner, repo, index, gitea_sdk.IssueLabelsOption{Labels: labels})
 	if err != nil {
@@ -651,18 +654,21 @@ func removeIssueLabelFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	labelID, err := params.GetIndex(args, "label_id")
-	if err != nil {
-		return to.ErrorResult(err)
+	labelArg := args["label_id"]
+	if labelArg == nil || labelArg == "" {
+		return to.ErrorResult(errors.New("label_id is required"))
 	}
 
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
-	_, err = client.Issues.DeleteIssueLabel(ctx, owner, repo, index, labelID)
+	ids, err := label.ResolveIDs(ctx, client, owner, repo, []any{labelArg})
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("remove label %v from %v/%v/issue/%v err: %v", labelID, owner, repo, index, err))
+		return to.ErrorResult(err)
+	}
+	if _, err = client.Issues.DeleteIssueLabel(ctx, owner, repo, index, ids[0]); err != nil {
+		return to.ErrorResult(fmt.Errorf("remove label %v from %v/%v/issue/%v err: %v", ids[0], owner, repo, index, err))
 	}
 	return to.TextResult("Label removed successfully")
 }

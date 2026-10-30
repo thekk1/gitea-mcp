@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -173,6 +174,9 @@ func Test_createIssueFn_labels(t *testing.T) {
 			mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"number":1,"title":"test","state":"open"}`))
+		case fmt.Sprintf("/api/v1/repos/%s/%s/labels", owner, repo):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"id":20,"name":"bug"}]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -197,10 +201,14 @@ func Test_createIssueFn_labels(t *testing.T) {
 		"owner":    owner,
 		"repo":     repo,
 		"title":    "test issue",
-		"labels":   []any{float64(10), float64(20)},
+		"labels":   nil,
 		"deadline": "2026-06-01T00:00:00Z",
 	}
+	if res, err := createIssueFn(context.Background(), args); err != nil || res.IsError {
+		t.Fatalf("createIssueFn() with null labels = %v, %v", res, err)
+	}
 
+	args["labels"] = []any{float64(10), "bug"}
 	_, err := createIssueFn(context.Background(), args)
 	if err != nil {
 		t.Fatalf("createIssueFn() error = %v", err)
@@ -218,6 +226,50 @@ func Test_createIssueFn_labels(t *testing.T) {
 	}
 	if gotBody["due_date"] == nil {
 		t.Fatalf("expected due_date to be set")
+	}
+}
+
+func Test_removeIssueLabelFn(t *testing.T) {
+	var removed string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/version":
+			_, _ = w.Write([]byte(`{"version":"1.12.0"}`))
+		case r.URL.Path == "/api/v1/repos/octo/demo/labels":
+			_, _ = w.Write([]byte(`[{"id":20,"name":"bug"}]`))
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/repos/octo/demo/issues/1/labels/"):
+			removed = strings.TrimPrefix(r.URL.Path, "/api/v1/repos/octo/demo/issues/1/labels/")
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	defer func(host string) { flag.Host = host }(flag.Host)
+	flag.Host = server.URL
+
+	for _, tc := range []struct {
+		name        string
+		args        map[string]any
+		wantRemoved string
+		wantErr     string
+	}{
+		{"name", map[string]any{"label_id": "bug"}, "20", ""},
+		{"missing", map[string]any{}, "", "label_id is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			removed = ""
+			args := map[string]any{"owner": "octo", "repo": "demo", "issue_number": float64(1)}
+			maps.Copy(args, tc.args)
+			res, err := removeIssueLabelFn(context.Background(), args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := res.Content[0].(*mcp.TextContent).Text
+			if removed != tc.wantRemoved || res.IsError != (tc.wantErr != "") || !strings.Contains(text, tc.wantErr) {
+				t.Errorf("removed %q, result %q, want removed %q and error %q", removed, text, tc.wantRemoved, tc.wantErr)
+			}
+		})
 	}
 }
 

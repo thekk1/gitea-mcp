@@ -16,6 +16,7 @@ import (
 	"gitea.com/gitea/gitea-mcp/internal/to"
 	"gitea.com/gitea/gitea-mcp/internal/tool"
 	"gitea.com/gitea/gitea-mcp/operation/issue"
+	"gitea.com/gitea/gitea-mcp/operation/label"
 
 	gitea_sdk "gitea.dev/sdk"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -80,7 +81,7 @@ var (
 		tool.Number("milestone", tool.Description("for 'create'/'update'")),
 		tool.String("state", tool.Description("for 'update'"), tool.Enum("open", "closed")),
 		tool.Boolean("allow_maintainer_edit", tool.Description("for 'update'")),
-		tool.Array("labels", tool.Description("label IDs"), tool.Items(map[string]any{"type": "number"})),
+		tool.Array("labels", tool.Description("label names or IDs"), tool.Items(map[string]any{"type": "string"})),
 		tool.String("deadline", tool.Description("ISO 8601")),
 		tool.Boolean("remove_deadline", tool.Description("for 'update'")),
 		tool.String("merge_style", tool.Description("for 'merge'"), tool.Enum("merge", "rebase", "rebase-merge", "squash", "fast-forward-only"), tool.Default("merge")),
@@ -436,8 +437,10 @@ func createPullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallToo
 		TeamReviewers: params.GetStringSlice(args, "team_reviewers"),
 		Milestone:     params.GetOptionalInt(args, "milestone", 0),
 	}
-	if labelIDs, err := params.GetInt64Slice(args, "labels"); err == nil {
-		opt.Labels = labelIDs
+	if args["labels"] != nil {
+		if opt.Labels, err = label.ResolveIDs(ctx, client, owner, repo, args["labels"]); err != nil {
+			return to.ErrorResult(err)
+		}
 	}
 	opt.Deadline = params.GetOptionalTime(args, "deadline")
 	pr, _, err := client.PullRequests.CreatePullRequest(ctx, owner, repo, opt)
@@ -998,13 +1001,15 @@ func editPullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallToolR
 		s := gitea_sdk.StateType(state)
 		opt.State = &s
 	}
-	if labelIDs, err := params.GetInt64Slice(args, "labels"); err == nil {
-		opt.Labels = labelIDs
-	}
 
 	client, err := gitea.ClientFromContext(ctx)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
+	}
+	if args["labels"] != nil {
+		if opt.Labels, err = label.ResolveIDs(ctx, client, owner, repo, args["labels"]); err != nil {
+			return to.ErrorResult(err)
+		}
 	}
 
 	pr, _, err := client.PullRequests.EditPullRequest(ctx, owner, repo, index, opt)
