@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"gitea.com/gitea/gitea-mcp/pkg/annotation"
 	"gitea.com/gitea/gitea-mcp/pkg/gitea"
@@ -81,9 +83,58 @@ func parseTerms(raw any) []string {
 	return out
 }
 
-// termPattern matches a term as a whole word: "ABC-12" does not match inside "ABC-123".
-func termPattern(term string) *regexp.Regexp {
-	return regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])` + regexp.QuoteMeta(term) + `($|[^\p{L}\p{N}])`)
+// termMatcher finds terms as whole words, ignoring case: "ABC-12" does not match inside "ABC-123".
+// It passes over each text once, so the cost does not grow with the number of terms; one regular
+// expression per term took minutes for a thousand terms and exceeded the MCP request timeout.
+type termMatcher struct {
+	index   map[string]int
+	lengths []int
+}
+
+func newTermMatcher(terms []string) *termMatcher {
+	m := &termMatcher{index: make(map[string]int, len(terms))}
+	seen := map[int]bool{}
+	for i, term := range terms {
+		term = strings.ToLower(term)
+		m.index[term] = i
+		if !seen[len(term)] {
+			seen[len(term)] = true
+			m.lengths = append(m.lengths, len(term))
+		}
+	}
+	return m
+}
+
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsNumber(r)
+}
+
+// find returns the indexes of the terms that occur in text, each once.
+func (m *termMatcher) find(text string) []int {
+	text = strings.ToLower(text)
+	var found []int
+	seen := map[int]bool{}
+	wordStart := true
+	for pos, r := range text {
+		if wordStart {
+			for _, length := range m.lengths {
+				end := pos + length
+				if end > len(text) {
+					continue
+				}
+				i, ok := m.index[text[pos:end]]
+				if !ok || seen[i] {
+					continue
+				}
+				if next, size := utf8.DecodeRuneInString(text[end:]); size == 0 || !isWordRune(next) {
+					seen[i] = true
+					found = append(found, i)
+				}
+			}
+		}
+		wordStart = !isWordRune(r)
+	}
+	return found
 }
 
 type checkListHit struct {
@@ -125,10 +176,7 @@ func issueCheckListFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
 
-	patterns := make([]*regexp.Regexp, len(terms))
-	for i, term := range terms {
-		patterns[i] = termPattern(term)
-	}
+	matcher := newTermMatcher(terms)
 	hits := make([][]checkListHit, len(terms))
 	scanned := 0
 	for page := 1; ; page++ {
@@ -142,18 +190,16 @@ func issueCheckListFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 			if matchBody {
 				text += "\n" + issue.Body
 			}
-			for i, pattern := range patterns {
-				if pattern.MatchString(text) {
-					title := issue.Title
-					if r := []rune(title); len(r) > checkListTitleChars {
-						title = string(r[:checkListTitleChars]) + "…"
-					}
-					kind := "issue"
-					if issue.PullRequest != nil {
-						kind = "pull"
-					}
-					hits[i] = append(hits[i], checkListHit{Number: issue.Index, Kind: kind, State: string(issue.State), Title: title})
+			for _, i := range matcher.find(text) {
+				title := issue.Title
+				if r := []rune(title); len(r) > checkListTitleChars {
+					title = string(r[:checkListTitleChars]) + "…"
 				}
+				kind := "issue"
+				if issue.PullRequest != nil {
+					kind = "pull"
+				}
+				hits[i] = append(hits[i], checkListHit{Number: issue.Index, Kind: kind, State: string(issue.State), Title: title})
 			}
 		}
 		scanned += len(issues)
