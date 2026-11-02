@@ -277,6 +277,37 @@ func Test_createPullRequestFn_options(t *testing.T) {
 	}
 }
 
+func Test_existingPullRequest(t *testing.T) {
+	const exists = `{"message":"pull request already exists for these targets [id: 2, issue_id: 1, head_repo_id: 6, base_repo_id: 6, head_branch: feature, base_branch: main]"}`
+	for _, tc := range []struct {
+		name    string
+		handler func(context.Context, map[string]any) (*mcp.CallToolResult, error)
+		message string
+		want    string
+	}{
+		{"create", createPullRequestFn, exists, "(existing pull request: #1)"},
+		{"edit", editPullRequestFn, exists, "(existing pull request: #1)"},
+		{"other conflict", createPullRequestFn, `{"message":"conflict"}`, "err: conflict"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			serveStub(t, func(w http.ResponseWriter, _req *http.Request) {
+				http.Error(w, tc.message, http.StatusConflict)
+			})
+
+			result, err := tc.handler(context.Background(), map[string]any{
+				"owner": "octo", "repo": "demo", "pull_number": float64(3), "title": "test", "head": "feature", "base": "main",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			if !result.IsError || !strings.HasSuffix(text, tc.want) {
+				t.Errorf("result %q, want it to end with %q", text, tc.want)
+			}
+		})
+	}
+}
+
 func Test_applyDraftPrefix(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -446,10 +447,19 @@ func createPullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallToo
 	opt.Deadline = params.GetOptionalTime(args, "deadline")
 	pr, _, err := client.PullRequests.CreatePullRequest(ctx, owner, repo, opt)
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("create %v/%v/pull_request err: %v", owner, repo, err))
+		return to.ErrorResult(fmt.Errorf("create %v/%v/pull_request err: %v%s", owner, repo, err, existingPullRequest(err)))
 	}
 
 	return to.TextResult(slimPullRequest(pr))
+}
+
+var existingPullRequestRe = regexp.MustCompile(`pull request already exists for these targets \[id: \d+, issue_id: (\d+)`) // issue_id holds the PR number, id the database id
+
+func existingPullRequest(err error) string {
+	if match := existingPullRequestRe.FindStringSubmatch(err.Error()); match != nil {
+		return " (existing pull request: #" + match[1] + ")"
+	}
+	return ""
 }
 
 type reviewerOp func(client *gitea_sdk.PullRequestsService, ctx context.Context, owner, repo string, index int64, opt gitea_sdk.PullReviewRequestOptions) (*gitea_sdk.Response, error)
@@ -999,7 +1009,7 @@ func editPullRequestFn(ctx context.Context, args map[string]any) (*mcp.CallToolR
 
 	pr, _, err := client.PullRequests.EditPullRequest(ctx, owner, repo, index, opt)
 	if err != nil {
-		return to.ErrorResult(fmt.Errorf("edit %v/%v/pr/%v err: %v", owner, repo, index, err))
+		return to.ErrorResult(fmt.Errorf("edit %v/%v/pr/%v err: %v%s", owner, repo, index, err, existingPullRequest(err)))
 	}
 
 	return to.TextResult(slimPullRequest(pr))
