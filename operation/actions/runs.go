@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,7 +9,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"unicode/utf8"
 
 	"gitea.com/gitea/gitea-mcp/internal/annotation"
 	"gitea.com/gitea/gitea-mcp/internal/gitea"
@@ -42,6 +45,9 @@ var (
 		tool.String("branch", tool.Description("filter for 'list_runs'")),
 		tool.Number("tail_lines", tool.Description("log tail lines"), tool.Default(200), tool.Minimum(1)),
 		tool.Number("max_bytes", tool.Description("max log bytes"), tool.Default(65536), tool.Minimum(1024)),
+		tool.String("pattern", tool.Description("for 'get_job_log_preview': RE2 regexp, keep only matching log lines (each starts with a timestamp), e.g. '::error::|FAIL'")),
+		tool.Number("context_lines", tool.Description("for 'get_job_log_preview': lines kept around each 'pattern' match"), tool.Default(2), tool.Minimum(0)),
+		tool.Number("offset", tool.Description("for 'get_job_log_preview': byte to start from, rounded down to a line start. Pass a previous result's 'bytes' to get only lines added since. Before Gitea 1.27 a rerun keeps the job_id and restarts its log, so start over at 0"), tool.Minimum(0)),
 		tool.String("output_path", tool.Description("for 'download_job_log'/'download_artifact'")),
 		tool.Number("page", tool.Default(1), tool.Minimum(1)),
 		tool.Number("per_page", tool.Default(30), tool.Minimum(1)),
@@ -548,14 +554,44 @@ func tailByLines(data []byte, tailLines int) []byte {
 	return data
 }
 
-func limitBytes(data []byte, maxBytes int) ([]byte, bool) {
-	if maxBytes <= 0 {
-		return data, false
+func limitBytes(data []byte, maxBytes int) []byte {
+	if maxBytes <= 0 || len(data) <= maxBytes {
+		return data
 	}
-	if len(data) <= maxBytes {
-		return data, false
+	data = data[len(data)-maxBytes:]
+	for len(data) > 0 && !utf8.RuneStart(data[0]) {
+		data = data[1:]
 	}
-	return data[len(data)-maxBytes:], true
+	return data
+}
+
+func grepLines(data []byte, re *regexp.Regexp, contextLines, tailLines int) ([]byte, bool) {
+	lines := bytes.SplitAfter(data, []byte("\n"))
+	if len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1]
+	}
+	contextLines = min(max(0, contextLines), len(lines))
+	var kept []int
+	next := 0
+	for i, line := range lines {
+		if re.Match(bytes.TrimSuffix(line, []byte("\n"))) {
+			for next = max(next, i-contextLines); next < min(len(lines), i+contextLines+1); next++ {
+				kept = append(kept, next)
+			}
+		}
+	}
+	truncated := tailLines > 0 && len(kept) > tailLines
+	if truncated {
+		kept = kept[len(kept)-tailLines:]
+	}
+	var out bytes.Buffer
+	for k, i := range kept {
+		if k > 0 && kept[k-1] != i-1 {
+			out.WriteString("--\n")
+		}
+		out.Write(lines[i])
+	}
+	return out.Bytes(), truncated
 }
 
 func getRepoActionJobLogPreviewFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -573,20 +609,38 @@ func getRepoActionJobLogPreviewFn(ctx context.Context, args map[string]any) (*mc
 	}
 	tailLines := int(params.GetOptionalInt(args, "tail_lines", 200))
 	maxBytes := int(params.GetOptionalInt(args, "max_bytes", 65536))
+	offset := max(0, int(params.GetOptionalInt(args, "offset", 0)))
+	var pattern *regexp.Regexp
+	if expr := params.GetOptionalString(args, "pattern", ""); expr != "" {
+		if pattern, err = regexp.Compile(expr); err != nil {
+			return to.ErrorResult(fmt.Errorf("invalid pattern: %v", err))
+		}
+	}
 	raw, err := fetchJobLogBytes(ctx, owner, repo, jobID)
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get %v/%v/job/%v log err: %v", owner, repo, jobID, err))
 	}
-
-	tailed := tailByLines(raw, tailLines)
-	limited, truncated := limitBytes(tailed, maxBytes)
+	raw = raw[:bytes.LastIndexByte(raw, '\n')+1] // hold back a row Gitea is still writing
+	if offset > len(raw) {
+		offset = 0
+	}
+	selected := raw[bytes.LastIndexByte(raw[:offset], '\n')+1:]
+	var tailed []byte
+	var cut bool
+	if pattern != nil {
+		tailed, cut = grepLines(selected, pattern, int(params.GetOptionalInt(args, "context_lines", 2)), tailLines)
+	} else {
+		tailed = tailByLines(selected, tailLines)
+		cut = len(tailed) < len(selected)
+	}
+	limited := limitBytes(tailed, maxBytes)
 
 	return to.TextResult(map[string]any{
 		"job_id":     jobID,
 		"bytes":      len(raw),
 		"tail_lines": tailLines,
 		"max_bytes":  maxBytes,
-		"truncated":  truncated,
+		"truncated":  cut || len(limited) < len(tailed),
 		"log":        string(limited),
 	})
 }
