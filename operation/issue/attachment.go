@@ -3,6 +3,7 @@ package issue
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -26,9 +27,9 @@ const AttachmentReadToolName = "attachment_read"
 
 var AttachmentReadTool = tool.NewDefinition(
 	AttachmentReadToolName,
-	"Read issue/comment attachments: list metadata, get metadata, or download content.",
+	"Read issue/comment attachments: list metadata, get metadata, download content, or return the content as base64 (method content).",
 	annotation.ReadOnly("Read issue or comment attachments"),
-	tool.String("method", tool.Required(), tool.Enum("list", "get", "download")),
+	tool.String("method", tool.Required(), tool.Enum("list", "get", "download", "content")),
 	tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 	tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 	tool.Number("issue_number", tool.Description("required for issue attachment list/get or issue-scoped metadata lookup")),
@@ -54,6 +55,8 @@ func attachmentReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 		return getAttachmentFn(ctx, args)
 	case "download":
 		return downloadAttachmentFn(ctx, args)
+	case "content":
+		return attachmentContentFn(ctx, args)
 	default:
 		return to.ErrorResult(fmt.Errorf("unknown method: %s", method))
 	}
@@ -160,6 +163,57 @@ func downloadAttachmentFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 		return to.ErrorResult(fmt.Errorf("write attachment file err: %v", err))
 	}
 	return attachmentFileResult(att, outputPath, written, name, attachmentUUID, mimeType)
+}
+
+// MaxAttachmentContentBytes limits method content and attachment_write; base64 grows the payload by a third.
+const MaxAttachmentContentBytes = 25 << 20
+
+// attachmentContentFn returns the attachment as JSON with filename, mime_type, size and content_base64, so a
+// client can pass the bytes on to another tool without access to the server's disk.
+func attachmentContentFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	attachmentUUID := strings.TrimSpace(params.GetOptionalString(args, "attachment_uuid", ""))
+	var att *gitea_sdk.Attachment
+	if attachmentUUID == "" {
+		var err error
+		att, err = lookupAttachment(ctx, args)
+		if err != nil {
+			return to.ErrorResult(err)
+		}
+		attachmentUUID = strings.TrimSpace(att.UUID)
+	}
+	if attachmentUUID == "" {
+		return to.ErrorResult(errors.New("attachment_uuid or attachment metadata with uuid is required"))
+	}
+	if att != nil && att.Size > MaxAttachmentContentBytes {
+		return to.ErrorResult(fmt.Errorf("attachment is %d bytes, larger than %d", att.Size, MaxAttachmentContentBytes))
+	}
+	name := attachmentFilename("", attachmentUUID)
+	if att != nil {
+		name = attachmentFilename(att.Name, attachmentUUID)
+	}
+	resp, err := gitea.OpenAttachment(ctx, "/attachments/"+attachmentUUID, "*/*")
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("download attachment err: %v", err))
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxAttachmentContentBytes+1))
+	if err != nil {
+		return to.ErrorResult(fmt.Errorf("read attachment err: %v", err))
+	}
+	if len(data) > MaxAttachmentContentBytes {
+		return to.ErrorResult(fmt.Errorf("attachment is larger than %d bytes", MaxAttachmentContentBytes))
+	}
+	res := map[string]any{
+		"filename":       name,
+		"uuid":           attachmentUUID,
+		"mime_type":      normalizeAttachmentContentType(resp.ContentType, name),
+		"size":           len(data),
+		"content_base64": base64.StdEncoding.EncodeToString(data),
+	}
+	if att != nil {
+		res["attachment_id"] = att.ID
+	}
+	return to.TextResult(res)
 }
 
 func shouldInlineAttachment(att *gitea_sdk.Attachment, mimeType string) bool {

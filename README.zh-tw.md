@@ -177,7 +177,8 @@ Cursor 等客戶端可使用 stdio 命令：
 | project_write                | project      | 寫入 | 寫入專案、欄及議題所在欄 |
 | list_issues                  | issue        | 讀取 | 列出倉庫問題 |
 | issue_check_list             | issue        | 讀取 | 以一次呼叫將清單與倉庫所有問題比對 |
-| attachment_read              | issue        | 讀取 | 讀取問題/評論附件：列出中繼資料、取得中繼資料或下載內容 |
+| attachment_read              | issue        | 讀取 | 讀取問題/評論附件：列出中繼資料、取得中繼資料、下載內容或以 base64 傳回 |
+| attachment_write             | issue        | 寫入 | 將 base64 編碼的檔案上傳為問題/評論附件 |
 | issue_read                   | issue        | 讀取 | 讀取問題：詳情、評論、標籤、依賴或可指派使用者 |
 | issue_write                  | issue        | 寫入 | 寫入問題：創建、更新、管理評論、標籤和依賴 |
 | list_pull_requests           | pull_request | 讀取 | 列出倉庫拉取請求 |

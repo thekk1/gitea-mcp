@@ -177,7 +177,8 @@ Once configured, try `list all my repositories` in the chat box.
 | project_write                | project      | Write  | Write projects, columns and issue placement |
 | list_issues                  | issue        | Read   | List repository issues |
 | issue_check_list             | issue        | Read   | Check a list of terms against all repository issues and pull requests |
-| attachment_read              | issue        | Read   | Read issue/comment attachments: list metadata, get metadata, or download content |
+| attachment_read              | issue        | Read   | Read issue/comment attachments: list metadata, get metadata, download content, or return it as base64 |
+| attachment_write             | issue        | Write  | Upload a base64-encoded file as issue/comment attachment |
 | issue_read                   | issue        | Read   | Read issue: details, comments, labels, dependencies, or assignee candidates |
 | issue_write                  | issue        | Write  | Write issues: create, update, manage comments, labels and dependencies |
 | list_pull_requests           | pull_request | Read   | List repository pull requests |
