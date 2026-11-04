@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"gitea.com/gitea/gitea-mcp/internal/annotation"
+	"gitea.com/gitea/gitea-mcp/internal/attachment"
 	"gitea.com/gitea/gitea-mcp/internal/gitea"
 	"gitea.com/gitea/gitea-mcp/internal/params"
 	"gitea.com/gitea/gitea-mcp/internal/to"
@@ -666,11 +667,7 @@ func downloadRepoActionJobLogFn(ctx context.Context, args map[string]any) (*mcp.
 	}
 
 	if outputPath == "" {
-		home, _ := os.UserHomeDir()
-		if home == "" {
-			home = os.TempDir()
-		}
-		outputPath = filepath.Join(home, ".gitea-mcp", "artifacts", "actions-logs", owner, repo, fmt.Sprintf("%d.log", jobID))
+		outputPath = attachment.DefaultPath("artifacts/actions-logs", owner, repo, fmt.Sprintf("%d.log", jobID))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o700); err != nil {

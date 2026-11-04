@@ -18,6 +18,7 @@ func TestArtifactFilename(t *testing.T) {
 		{"rejects backslash traversal", map[string]any{"name": `..\win`}, 7, "7.zip"},
 		{"rejects dot", map[string]any{"name": "."}, 7, "7.zip"},
 		{"rejects dotdot", map[string]any{"name": ".."}, 7, "7.zip"},
+		{"keeps trailing dot", map[string]any{"name": "build."}, 7, "build..zip"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

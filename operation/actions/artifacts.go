@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gitea.com/gitea/gitea-mcp/internal/attachment"
 	"gitea.com/gitea/gitea-mcp/internal/gitea"
 	"gitea.com/gitea/gitea-mcp/internal/params"
 	"gitea.com/gitea/gitea-mcp/internal/to"
@@ -158,11 +159,7 @@ func downloadRepoActionArtifactFn(ctx context.Context, args map[string]any) (*mc
 	}
 
 	if outputPath == "" {
-		home, _ := os.UserHomeDir()
-		if home == "" {
-			home = os.TempDir()
-		}
-		outputPath = filepath.Join(home, ".gitea-mcp", "artifacts", "actions-artifacts", owner, repo, artifactFilename(meta, artifactID))
+		outputPath = attachment.DefaultPath("artifacts/actions-artifacts", owner, repo, artifactFilename(meta, artifactID))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o700); err != nil {
@@ -188,8 +185,8 @@ func downloadRepoActionArtifactFn(ctx context.Context, args map[string]any) (*mc
 func artifactFilename(meta map[string]any, artifactID int64) string {
 	name, _ := meta["name"].(string)
 	name = strings.TrimSpace(name)
-	if name != "" && !strings.ContainsAny(name, `/\`) && name != "." && name != ".." {
-		return name + ".zip"
+	if strings.Trim(name, ".") != "" {
+		name += ".zip"
 	}
-	return fmt.Sprintf("%d.zip", artifactID)
+	return attachment.SafeFilename(name, strconv.FormatInt(artifactID, 10)+".zip")
 }

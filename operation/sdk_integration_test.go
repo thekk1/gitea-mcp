@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -88,9 +87,7 @@ func textContent(t *testing.T, result *mcp.CallToolResult) string {
 	return content.Text
 }
 
-// listAndCallVersion is the round trip every transport must support. wantText
-// differs per transport: the stdio subprocess resolves its version from the VCS
-// build info (main.go:14), so only the in-process servers have a known one.
+// listAndCallVersion is the round trip every transport must support.
 func listAndCallVersion(ctx context.Context, t *testing.T, session *mcp.ClientSession, wantText string) *mcp.ListToolsResult {
 	t.Helper()
 	result, err := session.ListTools(ctx, nil)
@@ -889,9 +886,6 @@ func TestHTTPAuthPerRequest(t *testing.T) {
 }
 
 func TestStdioCommandTransport(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping subprocess build in short mode")
-	}
 	for name, value := range map[string]string{
 		"GITEA_READONLY": "true",
 		"GITEA_SCOPES":   "user",
@@ -901,18 +895,16 @@ func TestStdioCommandTransport(t *testing.T) {
 		t.Setenv(name, value)
 	}
 	exposeAllTools(t)
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	binary := filepath.Join(t.TempDir(), "gitea-mcp")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "..")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build stdio test binary: %v\n%s", err, output)
-	}
-
 	client := mcp.NewClient(&mcp.Implementation{Name: "gitea-mcp-stdio-test", Version: "1"}, nil)
 	command := exec.CommandContext(ctx, binary, "--transport", "stdio")
-	command.Env = stdioCommandEnvironment()
+	command.Env = append(stdioCommandEnvironment(), "GITEA_MCP_TEST_SERVE=1")
 	session, err := client.Connect(ctx, &mcp.CommandTransport{
 		Command:           command,
 		TerminateDuration: 2 * time.Second,
@@ -925,5 +917,5 @@ func TestStdioCommandTransport(t *testing.T) {
 		t.Errorf("protocol version = %q, want %q", got, expectedProtocolVersion)
 	}
 	assertToolsOnlyCapabilities(t, session.InitializeResult().Capabilities)
-	listAndCallVersion(ctx, t, session, "Gitea MCP Server version:")
+	listAndCallVersion(ctx, t, session, "Gitea MCP Server version: dev")
 }

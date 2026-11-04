@@ -17,3 +17,23 @@ jobs:
         run: make build
       - name: security-check
         run: make security-check
+
+  test-windows:
+    runs-on: ubuntu-latest-kvm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.gitea/actions/go-setup
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/windows-vm
+          key: windows-vm
+      - name: test on windows
+        id: test-windows
+        run: WINDOWS_TEST_CACHE="$HOME/.cache/windows-vm" make test-windows
+        env:
+          WINDOWS_TEST_TIMEOUT: 45
+      - if: always() && steps.test-windows.outputs.save-cache == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/windows-vm
+          key: windows-vm

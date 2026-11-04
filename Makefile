@@ -1,5 +1,6 @@
 GO ?= go
-EXECUTABLE := gitea-mcp
+GOPATH ?= $(shell $(GO) env GOPATH)
+EXECUTABLE := gitea-mcp$(shell $(GO) env GOEXE)
 VERSION ?= $(shell git describe --tags --always | sed 's/-/+/' | sed 's/^v//')
 LDFLAGS := -X "main.Version=$(VERSION)"
 
@@ -7,6 +8,7 @@ GOLANGCI_LINT_PACKAGE ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@
 GOVULNCHECK_PACKAGE ?= golang.org/x/vuln/cmd/govulncheck@v1.9.0 # renovate: datasource=go
 
 GOTEST_FLAGS ?= -race -timeout 20m
+WINDOWS_TEST_IMAGE ?= dockurr/windows:6.06@sha256:16fd7c39a3e48bb946d29c59dc6015942e5b900a1fa5d7e5552053bfc48ee2ea # renovate: datasource=docker
 
 .PHONY: help
 help: ## print this help message
@@ -44,6 +46,10 @@ build: ## build the application
 test: ## run Go tests
 	$(GO) test $(GOTEST_FLAGS) ./...
 
+.PHONY: test-windows
+test-windows: ## run Go tests on Windows Server Core in a QEMU VM on the docker host
+	@GO=$(GO) WINDOWS_TEST_IMAGE=$(WINDOWS_TEST_IMAGE) ./scripts/test-windows.sh
+
 .PHONY: air
 air: ## install air for hot reload
 	@hash air > /dev/null 2>&1; if [ $$? -ne 0 ]; then \
@@ -52,7 +58,7 @@ air: ## install air for hot reload
 
 .PHONY: dev
 dev: air ## run the application with hot reload
-	air --build.cmd "make build" --build.bin ./gitea-mcp
+	air --build.cmd "make build" --build.bin ./$(EXECUTABLE)
 
 .PHONY: fmt
 fmt: ## format the Go code

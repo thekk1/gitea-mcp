@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -143,6 +144,9 @@ func TestWriteAttachmentStreamsBodyToFile(t *testing.T) {
 }
 
 func TestWriteAttachmentCreatesPrivateFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no permission bits")
+	}
 	path := filepath.Join(t.TempDir(), "attachment.bin")
 
 	if _, err := WriteAttachment(strings.NewReader("secret"), path); err != nil {
@@ -159,6 +163,9 @@ func TestWriteAttachmentCreatesPrivateFile(t *testing.T) {
 }
 
 func TestWriteAttachmentTightensExistingFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no permission bits")
+	}
 	path := filepath.Join(t.TempDir(), "attachment.bin")
 	if err := os.WriteFile(path, []byte("public"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)

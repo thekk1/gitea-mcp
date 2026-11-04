@@ -2,6 +2,7 @@ package attachment
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gitea.com/gitea/gitea-mcp/internal/flag"
@@ -155,39 +157,40 @@ func normalizeAttachmentContentType(contentType, name string) string {
 	return inferAttachmentMimeType(name)
 }
 
-func defaultAttachmentPath(owner, repo, name, uuid string) string {
+func DefaultPath(dir, owner, repo, filename string) string {
 	home, _ := os.UserHomeDir()
 	if home == "" {
 		home = os.TempDir()
 	}
+	return filepath.Join(home, ".gitea-mcp", dir, SafeFilename(owner, "unknown"), SafeFilename(repo, "unknown"), filename)
+}
+
+func defaultAttachmentPath(owner, repo, name, uuid string) string {
 	filename := attachmentFilename(name, uuid)
 	ext := filepath.Ext(filename)
 	base := strings.TrimSuffix(filename, ext)
 	if uuid != "" {
 		filename = uuid
-		if base != "" && base != "attachment" {
+		if base != "" && base != uuid {
 			filename = base + "-" + uuid
 		}
 		filename += ext
 	}
-	return filepath.Join(home, ".gitea-mcp", "attachments", safePathPart(owner), safePathPart(repo), filename)
+	return DefaultPath("attachments", owner, repo, filename)
 }
 
 func attachmentFilename(name, uuid string) string {
-	name = strings.TrimSpace(name)
-	if name != "" && !strings.ContainsAny(name, `/\\`) && name != "." && name != ".." {
-		return name
-	}
-	if uuid != "" {
-		return uuid + ".bin"
-	}
-	return "attachment.bin"
+	return SafeFilename(name, cmp.Or(uuid, "attachment")+SafeFilename(filepath.Ext(name), ".bin"))
 }
 
-func safePathPart(name string) string {
+var windowsDeviceName = regexp.MustCompile(`(?i)^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(COM|LPT)[1-9¹²³]) *(\.|$)`)
+
+// SafeFilename returns name, trimmed, if this OS and Windows can create it as one file with room for a suffix, else fallback.
+func SafeFilename(name, fallback string) string {
 	name = strings.TrimSpace(name)
-	if name != "" && !strings.ContainsAny(name, `/\\`) && name != "." && name != ".." {
+	if len(name) <= 200 && filepath.IsLocal(name) && !strings.HasSuffix(name, ".") && !windowsDeviceName.MatchString(name) &&
+		!strings.ContainsFunc(name, func(r rune) bool { return r < ' ' || strings.ContainsRune(`/\:*?"<>|`, r) }) {
 		return name
 	}
-	return "unknown"
+	return fallback
 }

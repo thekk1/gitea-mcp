@@ -251,6 +251,24 @@ func TestInitFlagSetTLSFlagsOverrideEnvAndWarnWhenInsecure(t *testing.T) {
 	}
 }
 
+func TestInitFlagSetTokenFileDecodesWindowsEncodingsAndRejectsUTF32(t *testing.T) {
+	origExit := osExit
+	t.Cleanup(func() { osExit, flagPkg.Token = origExit, "" })
+	env := map[string]string{"GITEA_ACCESS_TOKEN_FILE": "token"}
+	for data, wantExit := range map[string]bool{
+		"\ufeffsecret\r\n": false,
+		"\xff\xfes\x00e\x00c\x00r\x00e\x00t\x00\r\x00\n\x00": false,
+		"\xff\xfe\x00\x00s\x00\x00\x00":                      true,
+	} {
+		exited := false
+		osExit = func(int) { exited = true }
+		initFlagSet(flag.NewFlagSet("test", flag.ContinueOnError), nil, func(key string) string { return env[key] }, func(string) ([]byte, error) { return []byte(data), nil }, &bytes.Buffer{})
+		if exited != wantExit || (!exited && flagPkg.Token != "secret") {
+			t.Errorf("exited, Token = %v, %q from %q, want exit %v or Token secret", exited, flagPkg.Token, data, wantExit)
+		}
+	}
+}
+
 func TestInitFlagSetExtraHeaders(t *testing.T) {
 	origExit := osExit
 	t.Cleanup(func() { osExit, flagPkg.ExtraHeaders = origExit, nil })

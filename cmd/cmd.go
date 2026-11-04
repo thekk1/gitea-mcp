@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"unicode"
+	"unicode/utf16"
 
 	flagPkg "gitea.com/gitea/gitea-mcp/internal/flag"
 	"gitea.com/gitea/gitea-mcp/internal/gitea"
@@ -158,7 +162,11 @@ func initFlagSet(fs *flag.FlagSet, args []string, getenv func(string) string, re
 				fmt.Fprintf(stderr, "error reading GITEA_ACCESS_TOKEN_FILE: %v\n", err)
 				osExit(1)
 			}
-			flagPkg.Token = strings.TrimRight(string(data), "\r\n")
+			flagPkg.Token = strings.TrimSpace(decodeTokenFile(data))
+			if strings.ContainsFunc(flagPkg.Token, unicode.IsControl) {
+				fmt.Fprintln(stderr, "invalid GITEA_ACCESS_TOKEN_FILE: control characters, save it as UTF-8 or UTF-16LE")
+				osExit(1)
+			}
 		}
 	}
 
@@ -292,4 +300,14 @@ func Execute() {
 		log.Fatalf("Run Gitea MCP Server Error: %v", err)
 	}
 	_ = log.Default().Sync() // best-effort flush
+}
+
+// decodeTokenFile accepts UTF-8 with optional BOM and UTF-16LE with BOM.
+func decodeTokenFile(data []byte) string {
+	if !bytes.HasPrefix(data, []byte{0xff, 0xfe}) {
+		return strings.TrimPrefix(string(data), "\ufeff")
+	}
+	units := make([]uint16, (len(data)-2)/2)
+	_, _ = binary.Decode(data[2:], binary.LittleEndian, units)
+	return string(utf16.Decode(units))
 }

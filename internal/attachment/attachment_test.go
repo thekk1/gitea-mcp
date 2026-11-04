@@ -29,6 +29,12 @@ func TestAttachmentFilename(t *testing.T) {
 		{"falls back for traversal", "../etc/passwd", "abc", "abc.bin"},
 		{"falls back for empty name", "", "abc", "abc.bin"},
 		{"uses generic fallback", "", "", "attachment.bin"},
+		{"falls back for windows stream name", "a.png:b", "abc", "abc.bin"},
+		{"falls back keeping extension for windows reserved character", "a?.png", "abc", "abc.png"},
+		{"falls back for trailing dot", "a.", "abc", "abc.bin"},
+		{"falls back for windows device name on every os", "nul.txt", "abc", "abc.txt"},
+		{"falls back for control character", "a\x01b.png", "abc", "abc.png"},
+		{"falls back for name without room for a suffix", strings.Repeat("a", 201), "abc", "abc.bin"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -49,10 +55,15 @@ func TestInferAttachmentMimeType(t *testing.T) {
 }
 
 func TestDefaultAttachmentPath(t *testing.T) {
-	got := defaultAttachmentPath("octo", "demo", "shot.png", "uuid-1")
-	want := filepath.Join(".gitea-mcp", "attachments", "octo", "demo", "shot-uuid-1.png")
-	if !strings.HasSuffix(got, want) {
-		t.Fatalf("defaultAttachmentPath() = %q, want suffix %q", got, want)
+	for _, tt := range []struct{ repo, name, want string }{
+		{"demo", "shot.png", filepath.Join("demo", "shot-uuid-1.png")},
+		{"demo", "a?.png", filepath.Join("demo", "uuid-1.png")},
+		{"aux", "uuid-1", filepath.Join("unknown", "uuid-1")},
+	} {
+		want := filepath.Join(".gitea-mcp", "attachments", "octo", tt.want)
+		if got := defaultAttachmentPath("octo", tt.repo, tt.name, "uuid-1"); !strings.HasSuffix(got, want) {
+			t.Errorf("defaultAttachmentPath(%q, %q) = %q, want suffix %q", tt.repo, tt.name, got, want)
+		}
 	}
 }
 
@@ -65,6 +76,7 @@ func TestDownloadSavesLargeAttachmentToDefaultFile(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -89,10 +101,16 @@ func TestDownloadSavesLargeAttachmentToDefaultFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download() error = %v", err)
 	}
-	body := res.Content[0].(*mcp.TextContent).Text
+	var got struct {
+		Path  string `json:"path"`
+		Bytes int    `json:"bytes"`
+	}
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &got); err != nil {
+		t.Fatal(err)
+	}
 	wantPath := filepath.Join(home, ".gitea-mcp", "attachments", owner, repo, "large-uuid-1.bin")
-	if !strings.Contains(body, wantPath) {
-		t.Fatalf("result missing path %q: %s", wantPath, body)
+	if got.Path != wantPath || got.Bytes != len(payload) {
+		t.Fatalf("result = %+v, want path %q and %d bytes", got, wantPath, len(payload))
 	}
 	data, err := os.ReadFile(wantPath)
 	if err != nil {
@@ -100,9 +118,6 @@ func TestDownloadSavesLargeAttachmentToDefaultFile(t *testing.T) {
 	}
 	if string(data) != payload {
 		t.Fatalf("saved payload mismatch")
-	}
-	if !strings.Contains(body, `"bytes":32`) {
-		t.Fatalf("result missing bytes: %s", body)
 	}
 }
 
