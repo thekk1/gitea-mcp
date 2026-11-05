@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"strconv"
@@ -285,6 +286,9 @@ func Execute() {
 		}
 		return
 	}
+	if flagPkg.Debug {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
 	if _, err := gitea.InitTransport(); err != nil {
 		fmt.Fprintf(os.Stderr, "invalid TLS configuration: %v\n", err)
 		osExit(1)
@@ -292,14 +296,12 @@ func Execute() {
 	}
 	if err := operation.Run(); err != nil {
 		if err == context.Canceled {
-			log.Info("Server shutdown due to context cancellation")
-			_ = log.Default().Sync() // best-effort flush
+			log.Infof("Server shutdown due to context cancellation")
 			return
 		}
-		_ = log.Default().Sync() // best-effort flush
-		log.Fatalf("Run Gitea MCP Server Error: %v", err)
+		log.Errorf("Run Gitea MCP Server Error: %v", err)
+		osExit(1)
 	}
-	_ = log.Default().Sync() // best-effort flush
 }
 
 // decodeTokenFile accepts UTF-8 with optional BOM and UTF-16LE with BOM.

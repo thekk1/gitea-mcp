@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -100,7 +101,7 @@ func newHTTPServer(s *mcp.Server) *http.Server {
 	var handler http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return s },
 		&mcp.StreamableHTTPOptions{
-			Logger:                       log.Slog(),
+			Logger:                       slog.Default(),
 			MaxRequestBodyBytes:          maxRequestBodyBytes,
 			Stateless:                    true,
 			PropagateRequestCancellation: true,
@@ -202,7 +203,7 @@ func newMCPServer(version string) *mcp.Server {
 			Instructions: "Work with a Gitea instance: repositories, files, branches, tags, commits, releases, issues, pull requests, " +
 				"reviews, labels, milestones, projects, wiki, Actions, packages, notifications and time tracking. " +
 				"Use these tools for any Gitea repository or URL. <scope>_read and <scope>_write tools select their operation with the `method` argument.",
-			Logger: log.Slog(),
+			Logger: slog.Default(),
 			Capabilities: &mcp.ServerCapabilities{
 				Tools: &mcp.ToolCapabilities{},
 			},

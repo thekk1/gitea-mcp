@@ -9,6 +9,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io"
+	"log"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -16,15 +18,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"gitea.com/gitea/gitea-mcp/internal/flag"
-	"gitea.com/gitea/gitea-mcp/internal/log"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestNewHTTPTransportPinsRequestsAndRedirectsToUnixSocket(t *testing.T) {
@@ -179,9 +177,10 @@ func TestDebugLogsGiteaRequestsInsteadOfPrintingToStdout(t *testing.T) {
 	origHost, origDebug := flag.Host, flag.Debug
 	defer func() { flag.Host, flag.Debug = origHost, origDebug }()
 	flag.Host, flag.Debug = giteaSrv.URL, true
-	core, logs := observer.New(zapcore.DebugLevel)
-	defer log.SetDefault(log.Default())
-	log.SetDefault(zap.New(core))
+	var logs bytes.Buffer
+	defer log.SetOutput(log.Writer())
+	log.SetOutput(&logs)
+	defer slog.SetLogLoggerLevel(slog.SetLogLoggerLevel(slog.LevelDebug))
 
 	client, err := NewClient("the-token")
 	if err != nil {
@@ -199,8 +198,8 @@ func TestDebugLogsGiteaRequestsInsteadOfPrintingToStdout(t *testing.T) {
 	stdout, _ := io.ReadAll(stdoutReader)
 
 	want := "GET " + giteaSrv.URL + "/api/v1/user: 401 Unauthorized"
-	if len(stdout) != 0 || logs.FilterMessage(want).Len() != 1 {
-		t.Errorf("stdout %q, logs %v, want only the log %q", stdout, logs.All(), want)
+	if len(stdout) != 0 || strings.Count(logs.String(), want) != 1 {
+		t.Errorf("stdout %q, logs %q, want only the log %q", stdout, logs.String(), want)
 	}
 }
 
