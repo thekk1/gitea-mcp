@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
 
 version: 2
 
@@ -20,6 +20,17 @@ builds:
       - -s -w
       - -X main.Version={{.Version}}
 
+# blobs: can't take per-entry credentials, so R2 uploads go through upload-r2.sh
+publishers:
+  - name: cloudflare-r2
+    checksum: true
+    cmd: sh scripts/upload-r2.sh {{ abs .ArtifactPath }} gitea-mcp/{{ .Version }}/{{ .ArtifactName }}
+    env:
+      - R2_ENDPOINT={{ index .Env "R2_ENDPOINT" }}
+      - R2_BUCKET={{ index .Env "R2_BUCKET" }}
+      - R2_ACCESS_KEY_ID={{ index .Env "R2_ACCESS_KEY_ID" }}
+      - R2_SECRET_ACCESS_KEY={{ index .Env "R2_SECRET_ACCESS_KEY" }}
+
 archives:
   - formats: tar.gz
     # this name template makes the OS and Arch compatible with the results of `uname`.
@@ -35,8 +46,8 @@ archives:
       - goos: windows
         formats: zip
 
-checksum:
-  name_template: 'checksums.txt'
+nightly:
+  version_template: "nightly"
 
 changelog:
   sort: asc
