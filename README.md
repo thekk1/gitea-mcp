@@ -178,9 +178,9 @@ Once configured, try `list all my repositories` in the chat box.
 | list_issues                  | issue        | Read   | List repository issues |
 | issue_check_list             | issue        | Read   | Check a list of terms against all repository issues and pull requests |
 | attachment_read              | issue        | Read   | Read issue/comment attachments: list metadata, get metadata, download content, or return it as base64 |
-| attachment_write             | issue        | Write  | Upload a base64-encoded file as issue/comment attachment |
+| attachment_write             | issue        | Write  | Upload a base64-encoded file as issue/comment attachment, optionally link it in the issue body |
 | issue_read                   | issue        | Read   | Read issue: details, comments, labels, dependencies, or assignee candidates |
-| issue_write                  | issue        | Write  | Write issues: create, update, manage comments, labels and dependencies |
+| issue_write                  | issue        | Write  | Write issues: create, update, manage comments, labels and dependencies; body as text or base64 |
 | list_pull_requests           | pull_request | Read   | List repository pull requests |
 | pull_request_read            | pull_request | Read   | Read pull request: details, diff, files, commits, status, reviews, review comments, discussion comments, lookup by branches or commit, reviewer candidates |
 | pull_request_write           | pull_request | Write  | Write pull requests: create, update, close, reopen, merge, update branch, manage reviewers |

@@ -82,7 +82,8 @@ var (
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 		tool.Number("issue_number", tool.Description("required except for 'create'")),
 		tool.String("title", tool.Description("required for 'create'")),
-		tool.String("body", tool.Description("required for 'add_comment'/'edit_comment'")),
+		tool.String("body", tool.Description("required for 'add_comment'/'edit_comment', or give body_base64")),
+		tool.String("body_base64", tool.Description("body as base64 of UTF-8 text, instead of body; passes a file on unchanged")),
 		tool.Array("assignees", tool.Items(map[string]any{"type": "string"})),
 		tool.Number("milestone"),
 		tool.String("state", tool.Enum("open", "closed", "all")),
@@ -262,9 +263,13 @@ func createIssueFn(ctx context.Context, args map[string]any) (*mcp.CallToolResul
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
+	body, _, err := bodyArg(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
 	opt := gitea_sdk.CreateIssueOption{
 		Title: title,
-		Body:  params.GetOptionalString(args, "body", ""),
+		Body:  body,
 	}
 	opt.Assignees = params.GetStringSlice(args, "assignees")
 	if val, exists := args["milestone"]; exists {
@@ -300,7 +305,10 @@ func createIssueCommentFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	body, err := params.GetString(args, "body")
+	body, present, err := bodyArg(args)
+	if err == nil && !present {
+		err = errors.New("body or body_base64 is required")
+	}
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -333,8 +341,16 @@ func editIssueFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 		return to.ErrorResult(err)
 	}
 
+	body, present, err := bodyArg(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
+	var bodyPtr *string
+	if present {
+		bodyPtr = &body
+	}
 	opt := gitea_sdk.EditIssueOption{
-		Body:           params.GetPresentStringPtr(args, "body"),
+		Body:           bodyPtr,
 		Ref:            params.GetPresentStringPtr(args, "ref"),
 		Assignees:      params.GetStringSlice(args, "assignees"),
 		Deadline:       params.GetOptionalTime(args, "deadline"),
@@ -382,7 +398,10 @@ func editIssueCommentFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	body, err := params.GetString(args, "body")
+	body, present, err := bodyArg(args)
+	if err == nil && !present {
+		err = errors.New("body or body_base64 is required")
+	}
 	if err != nil {
 		return to.ErrorResult(err)
 	}
