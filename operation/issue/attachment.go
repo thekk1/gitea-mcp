@@ -20,6 +20,10 @@ func createAttachmentFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	if err != nil {
 		return to.ErrorResult(err)
 	}
+	linkInBody, _ := args["link_in_body"].(bool)
+	if linkInBody && scope.issueNumber <= 0 {
+		return to.ErrorResult(errors.New("link_in_body works only with issue_number"))
+	}
 	name, file, err := attachment.Upload(args)
 	if err != nil {
 		return to.ErrorResult(err)
@@ -37,7 +41,15 @@ func createAttachmentFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("create attachment err: %v", err))
 	}
-	return to.TextResult(attachment.Slim(att))
+	result := attachment.Slim(att)
+	if linkInBody {
+		linked, err := linkAttachmentInIssueBody(ctx, client, scope.owner, scope.repo, scope.issueNumber, name, "/attachments/"+att.UUID)
+		if err != nil {
+			return to.ErrorResult(fmt.Errorf("attachment %d uploaded, but linking it in the issue body failed: %v", att.ID, err))
+		}
+		result["linked_in_body"] = linked
+	}
+	return to.TextResult(result)
 }
 
 func deleteAttachmentFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

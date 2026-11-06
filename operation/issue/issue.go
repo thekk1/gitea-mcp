@@ -86,7 +86,8 @@ var (
 		tool.String("repo", tool.Required()),
 		tool.Number("issue_number", tool.Description("required except for create, update_comment, delete_comment or comment attachments")),
 		tool.String("title", tool.Description("required for 'create'")),
-		tool.String("body", tool.Description("required for 'add_comment'/'update_comment'")),
+		tool.String("body", tool.Description("required for 'add_comment'/'update_comment', or body_base64")),
+		tool.String("body_base64", tool.Description("body as base64 of UTF-8 text, instead of body; passes a prepared text on byte for byte")),
 		tool.Array("assignees", tool.Items(map[string]any{"type": "string"})),
 		tool.Number("milestone"),
 		tool.String("state", tool.Enum("open", "closed", "all")),
@@ -94,6 +95,7 @@ var (
 		tool.Number("attachment_id", tool.Description("required for delete_attachment")),
 		tool.String("name", tool.Description("file name for add_attachment")),
 		tool.String("content", tool.Description("base64 file content for add_attachment")),
+		tool.Boolean("link_in_body", tool.Description("add_attachment with issue_number: point each Markdown link in the issue body whose target is the file name, as in ![x](name) or [x](<file name>), to the attachment")),
 		tool.Array("labels", tool.Description("label names or IDs"), tool.Items(map[string]any{"type": "string"})),
 		tool.String("label_id", tool.Description("label name or ID (for 'remove_label')")),
 		tool.String("ref", tool.Description("branch to associate")),
@@ -247,9 +249,13 @@ func createIssueFn(ctx context.Context, args map[string]any) (*mcp.CallToolResul
 	if err != nil {
 		return to.ErrorResult(fmt.Errorf("get gitea client err: %v", err))
 	}
+	body, _, err := bodyArg(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
 	opt := gitea_sdk.CreateIssueOption{
 		Title: title,
-		Body:  params.GetOptionalString(args, "body", ""),
+		Body:  body,
 	}
 	opt.Assignees = params.GetStringSlice(args, "assignees")
 	if val, exists := args["milestone"]; exists {
@@ -287,7 +293,7 @@ func createIssueCommentFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	body, err := params.GetString(args, "body")
+	body, err := requiredBodyArg(args)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
@@ -320,12 +326,18 @@ func editIssueFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 		return to.ErrorResult(err)
 	}
 
+	body, hasBody, err := bodyArg(args)
+	if err != nil {
+		return to.ErrorResult(err)
+	}
 	opt := gitea_sdk.EditIssueOption{
-		Body:           params.GetPresentStringPtr(args, "body"),
 		Ref:            params.GetPresentStringPtr(args, "ref"),
 		Assignees:      params.GetStringSlice(args, "assignees"),
 		Deadline:       params.GetOptionalTime(args, "deadline"),
 		RemoveDeadline: params.GetOptionalBoolPtr(args, "remove_deadline"),
+	}
+	if hasBody {
+		opt.Body = &body
 	}
 	if title, ok := args["title"].(string); ok {
 		opt.Title = title
@@ -365,7 +377,7 @@ func editIssueCommentFn(ctx context.Context, args map[string]any) (*mcp.CallTool
 	if err != nil {
 		return to.ErrorResult(err)
 	}
-	body, err := params.GetString(args, "body")
+	body, err := requiredBodyArg(args)
 	if err != nil {
 		return to.ErrorResult(err)
 	}
