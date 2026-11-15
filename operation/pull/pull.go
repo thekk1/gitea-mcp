@@ -41,7 +41,7 @@ var (
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 		tool.String("state", tool.Enum("open", "closed", "all"), tool.Default("all")),
-		tool.String("sort", tool.Enum("oldest", "recentupdate", "leastupdate", "mostcomment", "leastcomment", "priority"), tool.Default("recentupdate")),
+		tool.String("sort", tool.Description("newest and oldest sort by creation time"), tool.Enum("newest", "oldest", "recentupdate", "leastupdate", "mostcomment", "leastcomment", "priority"), tool.Default("recentupdate")),
 		tool.Number("milestone"),
 		tool.Number("page", tool.Description(params.PageDesc), tool.Default(1)),
 		tool.Number("per_page", tool.Description(params.PaginationDesc), tool.Default(30)),
