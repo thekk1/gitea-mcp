@@ -115,3 +115,35 @@ func BenchmarkRegex(b *testing.B) {
 		}
 	}
 }
+
+func TestTermMatcherAliases(t *testing.T) {
+	aliases, err := parseAliases("DIFANGPVM2=PVM2; ABC = X")
+	if err != nil || len(aliases) != 2 {
+		t.Fatalf("parseAliases = %v, %v", aliases, err)
+	}
+	if _, err := parseAliases("DIFANGPVM2"); err == nil {
+		t.Error("parseAliases accepted an entry without =")
+	}
+	terms := []string{"DIFANGPVM2-12", "DIFANGPVM2-7", "PVM2-7", "OTHER-1"}
+	cases := []struct {
+		text string
+		want []int
+	}{
+		{"PVM2-12: Titel", []int{0}},
+		{"Jira: [DIFANGPVM2-12](url)", []int{0}},
+		{"pvm2-12 und DIFANGPVM2-12", []int{0}},
+		{"PVM2-123", nil},
+		{"XPVM2-12", nil},
+		{"PVM2-7", []int{2}},
+		{"DIFANGPVM2-7", []int{1}},
+		{"OTHER-1 PVM2-12", []int{0, 3}},
+	}
+	matcher := newTermMatcher(terms, aliases...)
+	for _, c := range cases {
+		got := matcher.find(c.text)
+		slices.Sort(got)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("find(%q) = %v, want %v", c.text, got, c.want)
+		}
+	}
+}
