@@ -14,7 +14,7 @@ import (
 )
 
 func TestListUserActivities(t *testing.T) {
-	// 52 activities, newest first: one full page of 50 and a second page with two
+	// 52 activities, newest first: one full page of 50 and a second page with two; two of them are mirror syncs
 	feed := []map[string]any{
 		{"op_type": "commit_repo", "ref_name": "refs/heads/main", "created": "2026-11-05T16:10:00+01:00",
 			"repo":    map[string]any{"full_name": "acme/docs", "html_url": "https://git.example/acme/docs"},
@@ -27,6 +27,12 @@ func TestListUserActivities(t *testing.T) {
 		{"op_type": "comment_issue", "created": "2026-11-05T14:00:00+01:00",
 			"repo": map[string]any{"full_name": "acme/app", "html_url": "https://git.example/acme/app"}, "content": "12|Can reproduce",
 			"comment": map[string]any{"id": 99, "html_url": "https://git.example/acme/app/issues/12#issuecomment-99"}},
+		{"op_type": "mirror_sync_push", "ref_name": "refs/heads/main", "created": "2026-11-05T10:00:00+01:00",
+			"repo":    map[string]any{"full_name": "jdoe/mirror", "html_url": "https://git.example/jdoe/mirror"},
+			"content": `{"Commits":[{"Sha1":"1111111111111111","Message":"Upstream change"}],"Len":3}`},
+		{"op_type": "mirror_sync_push", "ref_name": "refs/heads/dev", "created": "2026-11-05T09:00:00+01:00",
+			"repo":    map[string]any{"full_name": "jdoe/mirror", "html_url": "https://git.example/jdoe/mirror"},
+			"content": `{"Commits":[{"Sha1":"2222222222222222","Message":"Other change"}],"Len":2}`},
 	}
 	for i := len(feed); i < 52; i++ {
 		feed = append(feed, map[string]any{"op_type": "push_tag", "ref_name": "refs/tags/v" + strconv.Itoa(i),
@@ -75,33 +81,44 @@ func TestListUserActivities(t *testing.T) {
 			CommitsPushed int            `json:"commits_pushed"`
 			CommitsListed int            `json:"commits_listed"`
 		} `json:"by_repo"`
-		Activities []map[string]any `json:"activities"`
+		Activities  []map[string]any `json:"activities"`
+		MirrorSyncs map[string]struct {
+			Syncs         int `json:"syncs"`
+			CommitsPushed int `json:"commits_pushed"`
+		} `json:"mirror_syncs"`
 	}
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Username != "jdoe" || got.Total != 52 || got.Truncated || got.ByType["push_tag"] != 48 {
+	if got.Username != "jdoe" || got.Total != 50 || got.Truncated || got.ByType["push_tag"] != 46 ||
+		got.ByType["mirror_sync_push"] != 0 || len(got.Activities) != 50 {
 		t.Errorf("summary = %+v", got)
 	}
 	if got.Pushed != 8 || got.Listed != 2 {
 		t.Errorf("commits pushed %d listed %d, want 8 and 2", got.Pushed, got.Listed)
 	}
 	if docs, app := got.ByRepo["acme/docs"], got.ByRepo["acme/app"]; docs.Activities != 2 || docs.CommitsPushed != 8 ||
-		docs.CommitsListed != 2 || app.Activities != 50 || app.ByType["push_tag"] != 48 || app.CommitsPushed != 0 {
+		docs.CommitsListed != 2 || app.Activities != 48 || app.ByType["push_tag"] != 46 || app.CommitsPushed != 0 {
 		t.Errorf("by_repo = %+v", got.ByRepo)
 	}
-	last, _ := json.Marshal(got.Activities[51])
+	if _, ok := got.ByRepo["jdoe/mirror"]; ok {
+		t.Errorf("mirror syncs counted in by_repo: %+v", got.ByRepo)
+	}
+	if m := got.MirrorSyncs["jdoe/mirror"]; len(got.MirrorSyncs) != 1 || m.Syncs != 2 || m.CommitsPushed != 5 {
+		t.Errorf("mirror_syncs = %+v, want jdoe/mirror with 2 syncs and 5 commits", got.MirrorSyncs)
+	}
+	last, _ := json.Marshal(got.Activities[49])
 	if want := `{"commits":[{"sha":"0123456789","subject":"Fix typo"}],"commits_total":7,"created":"2026-11-05T16:10:00+01:00","html_url":"https://git.example/acme/docs/compare/aaa...bbb","op_type":"commit_repo","ref":"main","repo":"acme/docs","subject":"7 commits: 0123456789 Fix typo"}`; string(last) != want {
 		t.Errorf("push = %s, want %s", last, want)
 	}
-	single, _ := json.Marshal(got.Activities[50])
+	single, _ := json.Marshal(got.Activities[48])
 	if want := `{"commits":[{"sha":"fedcba9876","subject":"Add page"}],"commits_total":1,"created":"2026-11-05T15:30:00+01:00","html_url":"https://git.example/acme/docs/commit/fedcba9876543210","op_type":"commit_repo","ref":"main","repo":"acme/docs","subject":"fedcba9876 Add page"}`; string(single) != want {
 		t.Errorf("single push = %s, want %s", single, want)
 	}
-	if issue := got.Activities[49]; issue["html_url"] != nil {
+	if issue := got.Activities[47]; issue["html_url"] != nil {
 		t.Errorf("issue without repository address got html_url %v", issue["html_url"])
 	}
-	comment, _ := json.Marshal(got.Activities[48])
+	comment, _ := json.Marshal(got.Activities[46])
 	if want := `{"comment_id":99,"comment_url":"https://git.example/acme/app/issues/12#issuecomment-99","created":"2026-11-05T14:00:00+01:00","html_url":"https://git.example/acme/app/issues/12","number":12,"op_type":"comment_issue","repo":"acme/app","text":"Can reproduce"}`; string(comment) != want {
 		t.Errorf("comment = %s, want %s", comment, want)
 	}

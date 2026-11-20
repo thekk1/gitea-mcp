@@ -35,7 +35,9 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"of the Gitea server. by_repo and the commits_* fields give the counts per repository and in all; take numbers "+
 		"from them instead of counting the list. A push has its commit subjects in subject (one line) and the address "+
 		"of its commit, or of the comparison of its commits, in html_url; an issue or pull request has its address in "+
-		"html_url.",
+		"html_url. Syncs of pull mirrors the user owns are no actions of the user: Gitea runs them itself and books "+
+		"them on the mirror's owner, and their commits are those of the mirrored source. They are left out of "+
+		"activities and the counts and are counted per repository in mirror_syncs.",
 	annotation.ReadOnly("List a user's activities on one day"),
 	tool.String("date", tool.Required(), tool.Description("day as YYYY-MM-DD")),
 	tool.String("username", tool.Description("login of the user; empty means the current user")),
@@ -114,10 +116,24 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	activities := make([]map[string]any, 0, len(feed))
 	counts := map[string]int{}
 	repos := map[string]*repoCount{}
+	mirrors := map[string]*mirrorCount{}
 	allShas := map[string]bool{}
 	pushed := 0
 	for i := len(feed) - 1; i >= 0; i-- { // the feed is newest first; the result reads as a day
 		slim := slimActivity(feed[i])
+		if strings.HasPrefix(feed[i].OpType, "mirror_sync_") {
+			name, _ := slim["repo"].(string)
+			mc := mirrors[name]
+			if mc == nil {
+				mc = &mirrorCount{}
+				mirrors[name] = mc
+			}
+			mc.Syncs++
+			if n, ok := slim["commits_total"].(int); ok {
+				mc.CommitsPushed += n
+			}
+			continue
+		}
 		activities = append(activities, slim)
 		counts[feed[i].OpType]++
 		name, _ := slim["repo"].(string)
@@ -142,7 +158,7 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	for _, rc := range repos {
 		rc.CommitsListed = len(rc.shas)
 	}
-	return to.TextResult(map[string]any{
+	result := map[string]any{
 		"username":       username,
 		"date":           date,
 		"total":          len(activities),
@@ -152,7 +168,18 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 		"commits_listed": len(allShas),
 		"by_repo":        repos,
 		"activities":     activities,
-	})
+	}
+	if len(mirrors) > 0 {
+		result["mirror_syncs"] = mirrors
+	}
+	return to.TextResult(result)
+}
+
+// mirrorCount sums the syncs of one pull mirror: Gitea books them on the mirror's owner, so the feed of
+// only-performed-by lists them, but the owner did not push these commits.
+type mirrorCount struct {
+	Syncs         int `json:"syncs"`
+	CommitsPushed int `json:"commits_pushed"`
 }
 
 // repoCount sums one repository's activities: commits_pushed adds commits_total of every push (a commit
