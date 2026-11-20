@@ -18,10 +18,10 @@ func TestListUserActivities(t *testing.T) {
 	feed := []map[string]any{
 		{"op_type": "commit_repo", "ref_name": "refs/heads/main", "created": "2026-11-05T16:10:00+01:00",
 			"repo":    map[string]any{"full_name": "acme/docs", "html_url": "https://git.example/acme/docs"},
-			"content": `{"Commits":[{"Sha1":"0123456789abcdef","Message":"Fix typo\n\nlong body"}],"Len":7,"CompareURL":"acme/docs/compare/aaa...bbb"}`},
+			"content": `{"Commits":[{"Sha1":"0123456789abcdef","Message":"Fix typo\n\nlong body","AuthorEmail":"ann@example.com","AuthorName":"Ann"}],"Len":7,"CompareURL":"acme/docs/compare/aaa...bbb"}`},
 		{"op_type": "commit_repo", "ref_name": "refs/heads/main", "created": "2026-11-05T15:30:00+01:00",
 			"repo":    map[string]any{"full_name": "acme/docs", "html_url": "https://git.example/acme/docs/"},
-			"content": `{"Commits":[{"Sha1":"fedcba9876543210","Message":"Add page"}],"Len":1,"CompareURL":"acme/docs/compare/ccc...fedcba9876543210"}`},
+			"content": `{"Commits":[{"Sha1":"fedcba9876543210","Message":"Add page","AuthorEmail":"JDoe@Example.com","AuthorName":"J. Doe"}],"Len":1,"CompareURL":"acme/docs/compare/ccc...fedcba9876543210"}`},
 		{"op_type": "create_issue", "created": "2026-11-05T15:00:00+01:00",
 			"repo": map[string]any{"full_name": "acme/app"}, "content": "12|Crash on save"},
 		{"op_type": "comment_issue", "created": "2026-11-05T14:00:00+01:00",
@@ -29,10 +29,10 @@ func TestListUserActivities(t *testing.T) {
 			"comment": map[string]any{"id": 99, "html_url": "https://git.example/acme/app/issues/12#issuecomment-99"}},
 		{"op_type": "mirror_sync_push", "ref_name": "refs/heads/main", "created": "2026-11-05T10:00:00+01:00",
 			"repo":    map[string]any{"full_name": "jdoe/mirror", "html_url": "https://git.example/jdoe/mirror"},
-			"content": `{"Commits":[{"Sha1":"1111111111111111","Message":"Upstream change"}],"Len":3}`},
+			"content": `{"Commits":[{"Sha1":"1111111111111111","Message":"Upstream change","AuthorEmail":"jdoe@work.example","AuthorName":"J. Doe","Timestamp":"2026-11-04T17:00:00+01:00"}],"Len":3}`},
 		{"op_type": "mirror_sync_push", "ref_name": "refs/heads/dev", "created": "2026-11-05T09:00:00+01:00",
 			"repo":    map[string]any{"full_name": "jdoe/mirror", "html_url": "https://git.example/jdoe/mirror"},
-			"content": `{"Commits":[{"Sha1":"2222222222222222","Message":"Other change"}],"Len":2}`},
+			"content": `{"Commits":[{"Sha1":"2222222222222222","Message":"Other change","AuthorEmail":"dev@source.example","AuthorName":"Dev"}],"Len":2}`},
 	}
 	for i := len(feed); i < 52; i++ {
 		feed = append(feed, map[string]any{"op_type": "push_tag", "ref_name": "refs/tags/v" + strconv.Itoa(i),
@@ -43,7 +43,9 @@ func TestListUserActivities(t *testing.T) {
 		requests = append(requests, r.URL.RequestURI())
 		switch r.URL.Path {
 		case "/api/v1/user":
-			_, _ = w.Write([]byte(`{"login":"jdoe"}`))
+			_, _ = w.Write([]byte(`{"login":"jdoe","email":"jdoe@example.com"}`))
+		case "/api/v1/user/emails":
+			_, _ = w.Write([]byte(`[{"email":"jdoe@example.com"},{"email":"jdoe@work.example"}]`))
 		case "/api/v1/users/jdoe/activities/feeds":
 			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 			start, end := min((page-1)*50, len(feed)), min(page*50, len(feed))
@@ -62,6 +64,7 @@ func TestListUserActivities(t *testing.T) {
 	}
 	want := []string{
 		"/api/v1/user",
+		"/api/v1/user/emails",
 		"/api/v1/users/jdoe/activities/feeds?date=2026-11-05&limit=50&only-performed-by=true&page=1",
 		"/api/v1/users/jdoe/activities/feeds?date=2026-11-05&limit=50&only-performed-by=true&page=2",
 	}
@@ -81,10 +84,12 @@ func TestListUserActivities(t *testing.T) {
 			CommitsPushed int            `json:"commits_pushed"`
 			CommitsListed int            `json:"commits_listed"`
 		} `json:"by_repo"`
-		Activities  []map[string]any `json:"activities"`
-		MirrorSyncs map[string]struct {
-			Syncs         int `json:"syncs"`
-			CommitsPushed int `json:"commits_pushed"`
+		Activities     []map[string]any `json:"activities"`
+		AuthorsChecked bool             `json:"authors_checked"`
+		MirrorSyncs    map[string]struct {
+			Syncs         int                 `json:"syncs"`
+			CommitsPushed int                 `json:"commits_pushed"`
+			CommitsByUser []map[string]string `json:"commits_by_user"`
 		} `json:"mirror_syncs"`
 	}
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
@@ -107,8 +112,16 @@ func TestListUserActivities(t *testing.T) {
 	if m := got.MirrorSyncs["jdoe/mirror"]; len(got.MirrorSyncs) != 1 || m.Syncs != 2 || m.CommitsPushed != 5 {
 		t.Errorf("mirror_syncs = %+v, want jdoe/mirror with 2 syncs and 5 commits", got.MirrorSyncs)
 	}
+	// only the mirrored commit with one of the user's addresses is the user's
+	own, _ := json.Marshal(got.MirrorSyncs["jdoe/mirror"].CommitsByUser)
+	if want := `[{"authored":"2026-11-04T17:00:00+01:00","sha":"1111111111","subject":"Upstream change"}]`; string(own) != want {
+		t.Errorf("commits_by_user = %s, want %s", own, want)
+	}
+	if !got.AuthorsChecked {
+		t.Error("authors_checked = false with the user's addresses known")
+	}
 	last, _ := json.Marshal(got.Activities[49])
-	if want := `{"commits":[{"sha":"0123456789","subject":"Fix typo"}],"commits_total":7,"created":"2026-11-05T16:10:00+01:00","html_url":"https://git.example/acme/docs/compare/aaa...bbb","op_type":"commit_repo","ref":"main","repo":"acme/docs","subject":"7 commits: 0123456789 Fix typo"}`; string(last) != want {
+	if want := `{"commits":[{"author":"Ann","sha":"0123456789","subject":"Fix typo"}],"commits_total":7,"created":"2026-11-05T16:10:00+01:00","html_url":"https://git.example/acme/docs/compare/aaa...bbb","op_type":"commit_repo","ref":"main","repo":"acme/docs","subject":"7 commits: 0123456789 Fix typo"}`; string(last) != want {
 		t.Errorf("push = %s, want %s", last, want)
 	}
 	single, _ := json.Marshal(got.Activities[48])

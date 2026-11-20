@@ -35,9 +35,12 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"of the Gitea server. by_repo and the commits_* fields give the counts per repository and in all; take numbers "+
 		"from them instead of counting the list. A push has its commit subjects in subject (one line) and the address "+
 		"of its commit, or of the comparison of its commits, in html_url; an issue or pull request has its address in "+
-		"html_url. Syncs of pull mirrors the user owns are no actions of the user: Gitea runs them itself and books "+
-		"them on the mirror's owner, and their commits are those of the mirrored source. They are left out of "+
-		"activities and the counts and are counted per repository in mirror_syncs.",
+		"html_url. A commit whose author is someone else carries the author's name in author. Syncs of pull mirrors "+
+		"the user owns are no actions of the user: Gitea runs them itself and books them on the mirror's owner, and "+
+		"their commits are those of the authors in the mirrored source. They are left out of activities and the "+
+		"counts; mirror_syncs counts them per repository and lists in commits_by_user only the mirrored commits the "+
+		"user wrote. authors_checked is false if the user's addresses could not be read; then no commit is "+
+		"attributed by its author.",
 	annotation.ReadOnly("List a user's activities on one day"),
 	tool.String("date", tool.Required(), tool.Description("day as YYYY-MM-DD")),
 	tool.String("username", tool.Description("login of the user; empty means the current user")),
@@ -64,8 +67,11 @@ type feedActivity struct {
 
 type pushContent struct {
 	Commits []struct {
-		Sha1    string `json:"Sha1"`
-		Message string `json:"Message"`
+		Sha1        string `json:"Sha1"`
+		Message     string `json:"Message"`
+		AuthorEmail string `json:"AuthorEmail"`
+		AuthorName  string `json:"AuthorName"`
+		Timestamp   string `json:"Timestamp"`
 	} `json:"Commits"`
 	Len        int    `json:"Len"`
 	CompareURL string `json:"CompareURL"`
@@ -80,14 +86,33 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 		return to.ErrorResult(fmt.Errorf("date must be YYYY-MM-DD, got %q", date))
 	}
 	username := strings.TrimSpace(params.GetOptionalString(args, "username", ""))
+	emails := map[string]bool{}
 	if username == "" {
 		var me struct {
 			Login string `json:"login"`
+			Email string `json:"email"`
 		}
 		if _, err := gitea.DoJSON(ctx, "GET", "user", nil, nil, &me); err != nil {
 			return to.ErrorResult(fmt.Errorf("get current user err: %v", err))
 		}
 		username = me.Login
+		addEmail(emails, me.Email)
+		// every address of the account, not only the primary one: commits carry the address they were made with
+		var all []struct {
+			Email string `json:"email"`
+		}
+		if _, err := gitea.DoJSON(ctx, "GET", "user/emails", nil, nil, &all); err == nil {
+			for _, e := range all {
+				addEmail(emails, e.Email)
+			}
+		}
+	} else {
+		var other struct {
+			Email string `json:"email"`
+		}
+		if _, err := gitea.DoJSON(ctx, "GET", fmt.Sprintf("users/%s", url.PathEscape(username)), nil, nil, &other); err == nil {
+			addEmail(emails, other.Email)
+		}
 	}
 
 	var feed []feedActivity
@@ -120,7 +145,7 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	allShas := map[string]bool{}
 	pushed := 0
 	for i := len(feed) - 1; i >= 0; i-- { // the feed is newest first; the result reads as a day
-		slim := slimActivity(feed[i])
+		slim, own := slimActivity(feed[i], emails)
 		if strings.HasPrefix(feed[i].OpType, "mirror_sync_") {
 			name, _ := slim["repo"].(string)
 			mc := mirrors[name]
@@ -132,6 +157,7 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 			if n, ok := slim["commits_total"].(int); ok {
 				mc.CommitsPushed += n
 			}
+			mc.CommitsByUser = append(mc.CommitsByUser, own...)
 			continue
 		}
 		activities = append(activities, slim)
@@ -159,15 +185,16 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 		rc.CommitsListed = len(rc.shas)
 	}
 	result := map[string]any{
-		"username":       username,
-		"date":           date,
-		"total":          len(activities),
-		"truncated":      truncated,
-		"by_type":        counts,
-		"commits_pushed": pushed,
-		"commits_listed": len(allShas),
-		"by_repo":        repos,
-		"activities":     activities,
+		"username":        username,
+		"date":            date,
+		"total":           len(activities),
+		"truncated":       truncated,
+		"by_type":         counts,
+		"commits_pushed":  pushed,
+		"commits_listed":  len(allShas),
+		"by_repo":         repos,
+		"activities":      activities,
+		"authors_checked": len(emails) > 0,
 	}
 	if len(mirrors) > 0 {
 		result["mirror_syncs"] = mirrors
@@ -176,10 +203,18 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 }
 
 // mirrorCount sums the syncs of one pull mirror: Gitea books them on the mirror's owner, so the feed of
-// only-performed-by lists them, but the owner did not push these commits.
+// only-performed-by lists them, but the owner did not push these commits. commits_by_user holds the listed
+// mirrored commits whose author address is one of the user's.
 type mirrorCount struct {
-	Syncs         int `json:"syncs"`
-	CommitsPushed int `json:"commits_pushed"`
+	Syncs         int                 `json:"syncs"`
+	CommitsPushed int                 `json:"commits_pushed"`
+	CommitsByUser []map[string]string `json:"commits_by_user,omitempty"`
+}
+
+func addEmail(emails map[string]bool, email string) {
+	if email = strings.ToLower(strings.TrimSpace(email)); email != "" {
+		emails[email] = true
+	}
 }
 
 // repoCount sums one repository's activities: commits_pushed adds commits_total of every push (a commit
@@ -192,7 +227,10 @@ type repoCount struct {
 	shas          map[string]bool
 }
 
-func slimActivity(a feedActivity) map[string]any {
+// slimActivity shortens one feed entry. With the user's addresses known, a listed commit by another author
+// carries author, and the commits whose author address is the user's come back as own.
+func slimActivity(a feedActivity, emails map[string]bool) (map[string]any, []map[string]string) {
+	var own []map[string]string
 	out := map[string]any{"created": a.Created, "op_type": a.OpType}
 	repoURL := ""
 	if a.Repo != nil {
@@ -214,7 +252,15 @@ func slimActivity(a feedActivity) map[string]any {
 					sha = sha[:10]
 				}
 				subject, _, _ := strings.Cut(strings.TrimSpace(c.Message), "\n")
-				commits = append(commits, map[string]string{"sha": sha, "subject": subject})
+				commit := map[string]string{"sha": sha, "subject": subject}
+				if author := strings.ToLower(strings.TrimSpace(c.AuthorEmail)); len(emails) > 0 && author != "" {
+					if emails[author] {
+						own = append(own, map[string]string{"sha": sha, "subject": subject, "authored": c.Timestamp})
+					} else {
+						commit["author"] = c.AuthorName
+					}
+				}
+				commits = append(commits, commit)
 				subjects = append(subjects, sha+" "+subject)
 			}
 			out["commits"] = commits
@@ -263,7 +309,7 @@ func slimActivity(a feedActivity) map[string]any {
 			out["comment_url"] = a.Comment.HTMLURL
 		}
 	}
-	return out
+	return out, own
 }
 
 func shorten(s string) string {
