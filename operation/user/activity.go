@@ -33,7 +33,9 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"branches, tags and releases. Reads every page of the day, so the list is complete unless truncated is true. "+
 		"Only actions the user performed, only in repositories the caller may see. The day is taken in the time zone "+
 		"of the Gitea server. by_repo and the commits_* fields give the counts per repository and in all; take numbers "+
-		"from them instead of counting the list.",
+		"from them instead of counting the list. A push has its commit subjects in subject (one line) and the address "+
+		"of its commit, or of the comparison of its commits, in html_url; an issue or pull request has its address in "+
+		"html_url.",
 	annotation.ReadOnly("List a user's activities on one day"),
 	tool.String("date", tool.Required(), tool.Description("day as YYYY-MM-DD")),
 	tool.String("username", tool.Description("login of the user; empty means the current user")),
@@ -50,6 +52,7 @@ type feedActivity struct {
 	Created string `json:"created"`
 	Repo    *struct {
 		FullName string `json:"full_name"`
+		HTMLURL  string `json:"html_url"`
 	} `json:"repo"`
 	Comment *struct {
 		ID      int64  `json:"id"`
@@ -62,7 +65,8 @@ type pushContent struct {
 		Sha1    string `json:"Sha1"`
 		Message string `json:"Message"`
 	} `json:"Commits"`
-	Len int `json:"Len"`
+	Len        int    `json:"Len"`
+	CompareURL string `json:"CompareURL"`
 }
 
 func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -163,8 +167,10 @@ type repoCount struct {
 
 func slimActivity(a feedActivity) map[string]any {
 	out := map[string]any{"created": a.Created, "op_type": a.OpType}
+	repoURL := ""
 	if a.Repo != nil {
 		out["repo"] = a.Repo.FullName
+		repoURL = strings.TrimSuffix(a.Repo.HTMLURL, "/")
 	}
 	if ref := strings.TrimPrefix(strings.TrimPrefix(a.RefName, "refs/heads/"), "refs/tags/"); ref != "" {
 		out["ref"] = ref
@@ -174,6 +180,7 @@ func slimActivity(a feedActivity) map[string]any {
 		var push pushContent
 		if json.Unmarshal([]byte(a.Content), &push) == nil {
 			commits := make([]map[string]string, 0, len(push.Commits))
+			subjects := make([]string, 0, len(push.Commits))
 			for _, c := range push.Commits {
 				sha := c.Sha1
 				if len(sha) > 10 {
@@ -181,16 +188,39 @@ func slimActivity(a feedActivity) map[string]any {
 				}
 				subject, _, _ := strings.Cut(strings.TrimSpace(c.Message), "\n")
 				commits = append(commits, map[string]string{"sha": sha, "subject": subject})
+				subjects = append(subjects, sha+" "+subject)
 			}
 			out["commits"] = commits
 			// the feed keeps only the newest commits of a push; commits_total counts all of them
-			out["commits_total"] = max(push.Len, len(push.Commits))
+			total := max(push.Len, len(push.Commits))
+			out["commits_total"] = total
+			// subject and html_url give a push one line and one link, so a table of the day needs no nested field
+			switch {
+			case len(subjects) == 1 && total == 1:
+				out["subject"] = shorten(subjects[0])
+			case len(subjects) > 0:
+				out["subject"] = shorten(fmt.Sprintf("%d commits: %s", total, strings.Join(subjects, "; ")))
+			}
+			if repoURL != "" && len(push.Commits) > 0 {
+				if _, compare, ok := strings.Cut(push.CompareURL, "/compare/"); ok && total > 1 && compare != "" {
+					out["html_url"] = repoURL + "/compare/" + compare
+				} else {
+					out["html_url"] = repoURL + "/commit/" + push.Commits[0].Sha1
+				}
+			}
 		}
 	default:
 		if a.Content != "" {
 			if num, text, ok := strings.Cut(a.Content, "|"); ok {
 				if n, err := strconv.ParseInt(num, 10, 64); err == nil {
 					out["number"] = n
+					if repoURL != "" {
+						kind := "issues"
+						if strings.Contains(a.OpType, "pull") {
+							kind = "pulls"
+						}
+						out["html_url"] = fmt.Sprintf("%s/%s/%d", repoURL, kind, n)
+					}
 					if text = strings.TrimSpace(text); text != "" {
 						out["text"] = shorten(text)
 					}
