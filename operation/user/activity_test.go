@@ -60,10 +60,18 @@ func TestListUserActivities(t *testing.T) {
 		t.Errorf("requests = %v, want %v", requests, want)
 	}
 	var got struct {
-		Username   string           `json:"username"`
-		Total      int              `json:"total"`
-		Truncated  bool             `json:"truncated"`
-		ByType     map[string]int   `json:"by_type"`
+		Username  string         `json:"username"`
+		Total     int            `json:"total"`
+		Truncated bool           `json:"truncated"`
+		ByType    map[string]int `json:"by_type"`
+		Pushed    int            `json:"commits_pushed"`
+		Listed    int            `json:"commits_listed"`
+		ByRepo    map[string]struct {
+			Activities    int            `json:"activities"`
+			ByType        map[string]int `json:"by_type"`
+			CommitsPushed int            `json:"commits_pushed"`
+			CommitsListed int            `json:"commits_listed"`
+		} `json:"by_repo"`
 		Activities []map[string]any `json:"activities"`
 	}
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
@@ -71,6 +79,13 @@ func TestListUserActivities(t *testing.T) {
 	}
 	if got.Username != "jdoe" || got.Total != 51 || got.Truncated || got.ByType["push_tag"] != 48 {
 		t.Errorf("summary = %+v", got)
+	}
+	if got.Pushed != 7 || got.Listed != 1 {
+		t.Errorf("commits pushed %d listed %d, want 7 and 1", got.Pushed, got.Listed)
+	}
+	if docs, app := got.ByRepo["acme/docs"], got.ByRepo["acme/app"]; docs.Activities != 1 || docs.CommitsPushed != 7 ||
+		docs.CommitsListed != 1 || app.Activities != 50 || app.ByType["push_tag"] != 48 || app.CommitsPushed != 0 {
+		t.Errorf("by_repo = %+v", got.ByRepo)
 	}
 	last, _ := json.Marshal(got.Activities[50])
 	if want := `{"commits":[{"sha":"0123456789","subject":"Fix typo"}],"commits_total":7,"created":"2026-11-05T16:10:00+01:00","op_type":"commit_repo","ref":"main","repo":"acme/docs"}`; string(last) != want {

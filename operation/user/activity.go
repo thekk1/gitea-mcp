@@ -32,7 +32,8 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"created, closed, reopened and merged issues and pull requests, comments, reviews, created repositories, "+
 		"branches, tags and releases. Reads every page of the day, so the list is complete unless truncated is true. "+
 		"Only actions the user performed, only in repositories the caller may see. The day is taken in the time zone "+
-		"of the Gitea server.",
+		"of the Gitea server. by_repo and the commits_* fields give the counts per repository and in all; take numbers "+
+		"from them instead of counting the list.",
 	annotation.ReadOnly("List a user's activities on one day"),
 	tool.String("date", tool.Required(), tool.Description("day as YYYY-MM-DD")),
 	tool.String("username", tool.Description("login of the user; empty means the current user")),
@@ -108,18 +109,56 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 
 	activities := make([]map[string]any, 0, len(feed))
 	counts := map[string]int{}
+	repos := map[string]*repoCount{}
+	allShas := map[string]bool{}
+	pushed := 0
 	for i := len(feed) - 1; i >= 0; i-- { // the feed is newest first; the result reads as a day
-		activities = append(activities, slimActivity(feed[i]))
+		slim := slimActivity(feed[i])
+		activities = append(activities, slim)
 		counts[feed[i].OpType]++
+		name, _ := slim["repo"].(string)
+		rc := repos[name]
+		if rc == nil {
+			rc = &repoCount{ByType: map[string]int{}, shas: map[string]bool{}}
+			repos[name] = rc
+		}
+		rc.Activities++
+		rc.ByType[feed[i].OpType]++
+		if commits, ok := slim["commits"].([]map[string]string); ok {
+			for _, c := range commits {
+				rc.shas[c["sha"]] = true
+				allShas[name+"@"+c["sha"]] = true
+			}
+		}
+		if n, ok := slim["commits_total"].(int); ok {
+			rc.CommitsPushed += n
+			pushed += n
+		}
+	}
+	for _, rc := range repos {
+		rc.CommitsListed = len(rc.shas)
 	}
 	return to.TextResult(map[string]any{
-		"username":   username,
-		"date":       date,
-		"total":      len(activities),
-		"truncated":  truncated,
-		"by_type":    counts,
-		"activities": activities,
+		"username":       username,
+		"date":           date,
+		"total":          len(activities),
+		"truncated":      truncated,
+		"by_type":        counts,
+		"commits_pushed": pushed,
+		"commits_listed": len(allShas),
+		"by_repo":        repos,
+		"activities":     activities,
 	})
+}
+
+// repoCount sums one repository's activities: commits_pushed adds commits_total of every push (a commit
+// pushed to two branches counts twice), commits_listed counts the distinct commits the feed lists.
+type repoCount struct {
+	Activities    int            `json:"activities"`
+	ByType        map[string]int `json:"by_type"`
+	CommitsPushed int            `json:"commits_pushed"`
+	CommitsListed int            `json:"commits_listed"`
+	shas          map[string]bool
 }
 
 func slimActivity(a feedActivity) map[string]any {
