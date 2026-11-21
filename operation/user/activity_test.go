@@ -147,3 +147,22 @@ func TestListUserActivities(t *testing.T) {
 		t.Error("a date that is not YYYY-MM-DD must fail")
 	}
 }
+
+func TestPushWithoutNewCommits(t *testing.T) {
+	for _, tc := range []struct{ feed, want string }{
+		{`{"op_type":"commit_repo","ref_name":"refs/heads/feature/x y","created":"2026-11-05T16:06:35+01:00",
+			"repo":{"full_name":"acme/docs","html_url":"https://git.example/acme/docs"},"content":"{\"Commits\":[],\"Len\":0}"}`,
+			`{"commits":[],"commits_total":0,"created":"2026-11-05T16:06:35+01:00","html_url":"https://git.example/acme/docs/src/branch/feature/x%20y","op_type":"commit_repo","ref":"feature/x y","repo":"acme/docs","subject":"push to feature/x y without new commits"}`},
+		{`{"op_type":"commit_repo","created":"2026-11-05T16:06:35+01:00","repo":{"full_name":"acme/docs"},"content":"{}"}`,
+			`{"commits":[],"commits_total":0,"created":"2026-11-05T16:06:35+01:00","op_type":"commit_repo","repo":"acme/docs","subject":"push without new commits"}`},
+	} {
+		var a feedActivity
+		if err := json.Unmarshal([]byte(tc.feed), &a); err != nil {
+			t.Fatal(err)
+		}
+		slim, _ := slimActivity(a, nil)
+		if got, _ := json.Marshal(slim); string(got) != tc.want {
+			t.Errorf("push = %s, want %s", got, tc.want)
+		}
+	}
+}

@@ -34,8 +34,9 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"Only actions the user performed, only in repositories the caller may see. The day is taken in the time zone "+
 		"of the Gitea server. by_repo and the commits_* fields give the counts per repository and in all; take numbers "+
 		"from them instead of counting the list. A push has its commit subjects in subject (one line) and the address "+
-		"of its commit, or of the comparison of its commits, in html_url; an issue or pull request has its address in "+
-		"html_url. A commit whose author is someone else carries the author's name in author. Syncs of pull mirrors "+
+		"of its commit, or of the comparison of its commits, in html_url; a push without new commits says so in "+
+		"subject and links its branch. An issue or pull request has its address in html_url. A commit whose author "+
+		"is someone else carries the author's name in author. Syncs of pull mirrors "+
 		"the user owns are no actions of the user: Gitea runs them itself and books them on the mirror's owner, and "+
 		"their commits are those of the authors in the mirrored source. They are left out of activities and the "+
 		"counts; mirror_syncs counts them per repository and lists in commits_by_user only the mirrored commits the "+
@@ -268,18 +269,28 @@ func slimActivity(a feedActivity, emails map[string]bool) (map[string]any, []map
 			total := max(push.Len, len(push.Commits))
 			out["commits_total"] = total
 			// subject and html_url give a push one line and one link, so a table of the day needs no nested field
+			ref, _ := out["ref"].(string)
 			switch {
 			case len(subjects) == 1 && total == 1:
 				out["subject"] = shorten(subjects[0])
 			case len(subjects) > 0:
 				out["subject"] = shorten(fmt.Sprintf("%d commits: %s", total, strings.Join(subjects, "; ")))
+			case total == 0 && ref != "":
+				// a branch moved to commits it already had, e.g. pushed back or created on an old commit
+				out["subject"] = "push to " + ref + " without new commits"
+			case total == 0:
+				out["subject"] = "push without new commits"
 			}
-			if repoURL != "" && len(push.Commits) > 0 {
+			switch {
+			case repoURL == "":
+			case len(push.Commits) > 0:
 				if _, compare, ok := strings.Cut(push.CompareURL, "/compare/"); ok && total > 1 && compare != "" {
 					out["html_url"] = repoURL + "/compare/" + compare
 				} else {
 					out["html_url"] = repoURL + "/commit/" + push.Commits[0].Sha1
 				}
+			case ref != "" && strings.HasPrefix(a.RefName, "refs/heads/"):
+				out["html_url"] = repoURL + "/src/branch/" + pathEscapeRef(ref)
 			}
 		}
 	default:
@@ -310,6 +321,15 @@ func slimActivity(a feedActivity, emails map[string]bool) (map[string]any, []map
 		}
 	}
 	return out, own
+}
+
+// pathEscapeRef escapes each segment of a branch name for a URL path; a branch may contain slashes.
+func pathEscapeRef(ref string) string {
+	parts := strings.Split(ref, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
 }
 
 func shorten(s string) string {
