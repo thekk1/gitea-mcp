@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
+	"sync"
 	"testing"
 
 	"gitea.com/gitea/gitea-mcp/pkg/flag"
@@ -179,6 +181,85 @@ func TestShortCompare(t *testing.T) {
 	} {
 		if got := shortCompare(in); got != want {
 			t.Errorf("shortCompare(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestListUserActivitiesPeriod(t *testing.T) {
+	byDate := map[string]string{
+		"2026-07-11": `[]`,
+		"2026-07-12": `[{"op_type":"commit_repo","ref_name":"refs/heads/fix/a","created":"2026-07-12T20:29:30+02:00",
+			"repo":{"full_name":"acme/app","html_url":"https://git.example/acme/app"},
+			"content":"{\"Commits\":[{\"Sha1\":\"aaaaaaaaaaaaaaaa\",\"Message\":\"Fix\"}],\"Len\":1}"},
+			{"op_type":"commit_repo","ref_name":"refs/heads/fix/a","created":"2026-07-12T20:29:22+02:00",
+			"repo":{"full_name":"acme/app","html_url":"https://git.example/acme/app"},"content":""}]`,
+		"2026-07-13": `[{"op_type":"create_pull_request","created":"2026-07-13T09:00:00+02:00",
+			"repo":{"full_name":"acme/app","html_url":"https://git.example/acme/app"},"content":"7|Fix"}]`,
+	}
+	var mu sync.Mutex
+	var dates []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/users/jdoe":
+			_, _ = w.Write([]byte(`{"email":"jdoe@example.com"}`))
+		case "/api/v1/users/jdoe/activities/feeds":
+			mu.Lock()
+			dates = append(dates, r.URL.Query().Get("date"))
+			mu.Unlock()
+			_, _ = w.Write([]byte(byDate[r.URL.Query().Get("date")]))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	defer func(host string) { flag.Host = host }(flag.Host)
+	flag.Host = server.URL
+
+	result, err := ListUserActivitiesFn(t.Context(), map[string]any{"date_from": "2026-07-11", "date_to": "2026-07-13", "username": "jdoe"})
+	if err != nil || result.IsError {
+		t.Fatalf("err %v, result %+v", err, result)
+	}
+	sort.Strings(dates)
+	if fmt.Sprint(dates) != "[2026-07-11 2026-07-12 2026-07-13]" {
+		t.Errorf("days read = %v", dates)
+	}
+	var got struct {
+		Total           int              `json:"total"`
+		DateFrom        string           `json:"date_from"`
+		DateTo          string           `json:"date_to"`
+		DaysChecked     int              `json:"days_checked"`
+		ByDay           map[string]int   `json:"by_day"`
+		ByType          map[string]int   `json:"by_type"`
+		Pushes          int              `json:"pushes"`
+		BranchesCreated int              `json:"branches_created"`
+		Pushed          int              `json:"commits_pushed"`
+		Activities      []map[string]any `json:"activities"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != 3 || got.DateFrom != "2026-07-11" || got.DateTo != "2026-07-13" || got.DaysChecked != 3 ||
+		fmt.Sprint(got.ByDay) != "map[2026-07-12:2 2026-07-13:1]" || got.ByType["commit_repo"] != 2 ||
+		got.Pushes != 1 || got.BranchesCreated != 1 || got.Pushed != 1 {
+		t.Errorf("summary = %+v", got)
+	}
+	var created []string
+	for _, a := range got.Activities {
+		created = append(created, a["created"].(string))
+	}
+	if want := "[2026-07-12T20:29:22+02:00 2026-07-12T20:29:30+02:00 2026-07-13T09:00:00+02:00]"; fmt.Sprint(created) != want {
+		t.Errorf("order = %v, want %v", created, want)
+	}
+
+	for _, args := range []map[string]any{
+		{"date": "2026-07-11", "date_from": "2026-07-11", "date_to": "2026-07-12"},
+		{"date_from": "2026-07-13", "date_to": "2026-07-11"},
+		{"date_from": "2026-01-01", "date_to": "2026-12-31"},
+		{"date_from": "2026-07-11"},
+		{},
+	} {
+		if result, err := ListUserActivitiesFn(t.Context(), args); err != nil || !result.IsError {
+			t.Errorf("%v: want an error result, got %+v (%v)", args, result, err)
 		}
 	}
 }

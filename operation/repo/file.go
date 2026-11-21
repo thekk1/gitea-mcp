@@ -51,6 +51,7 @@ var (
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 		tool.String("path", tool.Default("/"), tool.Description(params.PathDesc)),
+		tool.Array("paths", tool.Description("several files in one call instead of path, up to 50, read with one request: one entry per path in files, as UTF-8 text where it is text"), tool.Items(map[string]any{"type": "string"})),
 		tool.String("ref", tool.Description("branch, tag, or commit SHA, defaults to the default branch")),
 		tool.String("sha", tool.Description("commit SHA, overrides ref")),
 		tool.Boolean("withLines", tool.Description("return numbered lines")),
@@ -193,6 +194,9 @@ func GetFileContentFn(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 	var in getFileContentArgs
 	if err := params.Bind(args, &in); err != nil {
 		return to.ErrorResult(err)
+	}
+	if _, many := args["paths"]; many {
+		return getFilesContentFn(ctx, args, in)
 	}
 	segments := strings.Split(strings.Trim(in.Path, "/"), "/")
 	for i, segment := range segments {

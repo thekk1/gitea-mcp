@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gitea.com/gitea/gitea-mcp/pkg/annotation"
@@ -28,12 +29,15 @@ const (
 
 var ListUserActivitiesTool = tool.NewDefinition(
 	ListUserActivitiesToolName,
-	"List everything a user did in Gitea on one day, from the user's activity feed: pushes with their commits, "+
+	"List everything a user did in Gitea on one day or in a period of up to 92 days (date_from to date_to) in one "+
+		"call, from the user's activity feed: pushes with their commits, "+
 		"created, closed, reopened and merged issues and pull requests, comments, reviews, created repositories, "+
-		"branches, tags and releases. Reads every page of the day, so the list is complete unless truncated is true. "+
-		"Only actions the user performed, only in repositories the caller may see. The day is taken in the time zone "+
-		"of the Gitea server. by_repo and the commits_* fields give the counts per repository and in all; take numbers "+
-		"from them instead of counting the list. A push has its commit subjects in subject (one line) and the address "+
+		"branches, tags and releases. Reads every page of every day, so the list is complete unless truncated is true "+
+		"(truncated_days names the days). "+
+		"Only actions the user performed, only in repositories the caller may see. Days are taken in the time zone "+
+		"of the Gitea server. total, by_type, by_day, by_repo, pushes, branches_created and the commits_* fields give "+
+		"the counts of the whole period; take numbers from them instead of counting or adding. pushes and "+
+		"branches_created split the commit_repo entries of by_type. A push has its commit subjects in subject (one line) and the address "+
 		"of its commit, or of the comparison of its commits, in html_url, with the ten-character hashes of subject; a push without new commits says so in "+
 		"subject and links its branch; a newly created branch has subject \"created branch <name>\" and links it. An issue or pull request has its address in html_url. A commit whose author "+
 		"is someone else carries the author's name in author. Syncs of pull mirrors "+
@@ -42,8 +46,10 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"counts; mirror_syncs counts them per repository and lists in commits_by_user only the mirrored commits the "+
 		"user wrote. authors_checked is false if the user's addresses could not be read; then no commit is "+
 		"attributed by its author.",
-	annotation.ReadOnly("List a user's activities on one day"),
-	tool.String("date", tool.Required(), tool.Description("day as YYYY-MM-DD")),
+	annotation.ReadOnly("List a user's activities on a day or in a period"),
+	tool.String("date", tool.Description("one day as YYYY-MM-DD; or give date_from and date_to")),
+	tool.String("date_from", tool.Description("first day of a period as YYYY-MM-DD, with date_to; at most 92 days")),
+	tool.String("date_to", tool.Description("last day of a period as YYYY-MM-DD, included")),
 	tool.String("username", tool.Description("login of the user; empty means the current user")),
 )
 
@@ -78,13 +84,16 @@ type pushContent struct {
 	CompareURL string `json:"CompareURL"`
 }
 
+// activityMaxDays caps a period; activityWorkers caps the days read at the same time.
+const (
+	activityMaxDays = 92
+	activityWorkers = 2
+)
+
 func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	date, err := params.GetString(args, "date")
+	days, err := activityDays(args)
 	if err != nil {
 		return to.ErrorResult(err)
-	}
-	if _, err := time.Parse("2006-01-02", date); err != nil {
-		return to.ErrorResult(fmt.Errorf("date must be YYYY-MM-DD, got %q", date))
 	}
 	username := strings.TrimSpace(params.GetOptionalString(args, "username", ""))
 	emails := map[string]bool{}
@@ -116,12 +125,161 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 		}
 	}
 
+	// Gitea's feed filters by one day only (date); the days of a period are read here, two at a time.
+	feeds := make([][]feedActivity, len(days))
+	truncatedDays := make([]bool, len(days))
+	errs := make([]error, len(days))
+	sem := make(chan struct{}, activityWorkers)
+	var wg sync.WaitGroup
+	for i, day := range days {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			feeds[i], truncatedDays[i], errs[i] = fetchActivityDay(ctx, username, day)
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			return to.ErrorResult(fmt.Errorf("list activities of %q on %s err: %v", username, days[i], err))
+		}
+	}
+
+	activities := []map[string]any{}
+	counts := map[string]int{}
+	repos := map[string]*repoCount{}
+	mirrors := map[string]*mirrorCount{}
+	allShas := map[string]bool{}
+	byDay := map[string]int{}
+	var truncatedList []string
+	pushed, pushes, branchesCreated := 0, 0, 0
+	for d, feed := range feeds {
+		if truncatedDays[d] {
+			truncatedList = append(truncatedList, days[d])
+		}
+		for i := len(feed) - 1; i >= 0; i-- { // the feed is newest first; the result reads in time order
+			slim, own := slimActivity(feed[i], emails)
+			if strings.HasPrefix(feed[i].OpType, "mirror_sync_") {
+				name, _ := slim["repo"].(string)
+				mc := mirrors[name]
+				if mc == nil {
+					mc = &mirrorCount{}
+					mirrors[name] = mc
+				}
+				mc.Syncs++
+				if n, ok := slim["commits_total"].(int); ok {
+					mc.CommitsPushed += n
+				}
+				mc.CommitsByUser = append(mc.CommitsByUser, own...)
+				continue
+			}
+			activities = append(activities, slim)
+			byDay[days[d]]++
+			counts[feed[i].OpType]++
+			if feed[i].OpType == "commit_repo" {
+				if subject, _ := slim["subject"].(string); strings.HasPrefix(subject, "created branch ") {
+					branchesCreated++
+				} else {
+					pushes++
+				}
+			}
+			name, _ := slim["repo"].(string)
+			rc := repos[name]
+			if rc == nil {
+				rc = &repoCount{ByType: map[string]int{}, shas: map[string]bool{}}
+				repos[name] = rc
+			}
+			rc.Activities++
+			rc.ByType[feed[i].OpType]++
+			if commits, ok := slim["commits"].([]map[string]string); ok {
+				for _, c := range commits {
+					rc.shas[c["sha"]] = true
+					allShas[name+"@"+c["sha"]] = true
+				}
+			}
+			if n, ok := slim["commits_total"].(int); ok {
+				rc.CommitsPushed += n
+				pushed += n
+			}
+		}
+	}
+	for _, rc := range repos {
+		rc.CommitsListed = len(rc.shas)
+	}
+	result := map[string]any{
+		"username":         username,
+		"total":            len(activities),
+		"truncated":        len(truncatedList) > 0,
+		"by_type":          counts,
+		"pushes":           pushes,
+		"branches_created": branchesCreated,
+		"commits_pushed":   pushed,
+		"commits_listed":   len(allShas),
+		"by_repo":          repos,
+		"activities":       activities,
+		"authors_checked":  len(emails) > 0,
+	}
+	if len(days) == 1 {
+		result["date"] = days[0]
+	} else {
+		result["date_from"] = days[0]
+		result["date_to"] = days[len(days)-1]
+		result["days_checked"] = len(days)
+		result["by_day"] = byDay
+		if len(truncatedList) > 0 {
+			result["truncated_days"] = truncatedList
+		}
+	}
+	if len(mirrors) > 0 {
+		result["mirror_syncs"] = mirrors
+	}
+	return to.TextResult(result)
+}
+
+// activityDays returns the days of date, or of date_from to date_to (both included), as YYYY-MM-DD.
+func activityDays(args map[string]any) ([]string, error) {
+	date := strings.TrimSpace(params.GetOptionalString(args, "date", ""))
+	from := strings.TrimSpace(params.GetOptionalString(args, "date_from", ""))
+	until := strings.TrimSpace(params.GetOptionalString(args, "date_to", ""))
+	if date != "" {
+		if from != "" || until != "" {
+			return nil, fmt.Errorf("give date or date_from with date_to, not both")
+		}
+		from, until = date, date
+	}
+	if from == "" || until == "" {
+		return nil, fmt.Errorf("date, or date_from and date_to, is required")
+	}
+	start, err := time.Parse("2006-01-02", from)
+	if err != nil {
+		return nil, fmt.Errorf("date_from must be YYYY-MM-DD, got %q", from)
+	}
+	end, err := time.Parse("2006-01-02", until)
+	if err != nil {
+		return nil, fmt.Errorf("date_to must be YYYY-MM-DD, got %q", until)
+	}
+	if end.Before(start) {
+		return nil, fmt.Errorf("date_to %s is before date_from %s", until, from)
+	}
+	n := int(end.Sub(start).Hours()/24) + 1
+	if n > activityMaxDays {
+		return nil, fmt.Errorf("the period has %d days, at most %d per call", n, activityMaxDays)
+	}
+	days := make([]string, 0, n)
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		days = append(days, d.Format("2006-01-02"))
+	}
+	return days, nil
+}
+
+// fetchActivityDay reads every page of one day of the user's feed, newest first.
+func fetchActivityDay(ctx context.Context, username, date string) ([]feedActivity, bool, error) {
 	var feed []feedActivity
-	truncated := false
 	for page := 1; ; page++ {
 		if page > activityMaxPages {
-			truncated = true
-			break
+			return feed, true, nil
 		}
 		var batch []feedActivity
 		query := url.Values{
@@ -131,76 +289,13 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 			"limit":             {strconv.Itoa(activityPageSize)},
 		}
 		if _, err := gitea.DoJSON(ctx, "GET", fmt.Sprintf("users/%s/activities/feeds", url.PathEscape(username)), query, nil, &batch); err != nil {
-			return to.ErrorResult(fmt.Errorf("list activities of %q err: %v", username, err))
+			return nil, false, err
 		}
 		feed = append(feed, batch...)
 		if len(batch) < activityPageSize {
-			break
+			return feed, false, nil
 		}
 	}
-
-	activities := make([]map[string]any, 0, len(feed))
-	counts := map[string]int{}
-	repos := map[string]*repoCount{}
-	mirrors := map[string]*mirrorCount{}
-	allShas := map[string]bool{}
-	pushed := 0
-	for i := len(feed) - 1; i >= 0; i-- { // the feed is newest first; the result reads as a day
-		slim, own := slimActivity(feed[i], emails)
-		if strings.HasPrefix(feed[i].OpType, "mirror_sync_") {
-			name, _ := slim["repo"].(string)
-			mc := mirrors[name]
-			if mc == nil {
-				mc = &mirrorCount{}
-				mirrors[name] = mc
-			}
-			mc.Syncs++
-			if n, ok := slim["commits_total"].(int); ok {
-				mc.CommitsPushed += n
-			}
-			mc.CommitsByUser = append(mc.CommitsByUser, own...)
-			continue
-		}
-		activities = append(activities, slim)
-		counts[feed[i].OpType]++
-		name, _ := slim["repo"].(string)
-		rc := repos[name]
-		if rc == nil {
-			rc = &repoCount{ByType: map[string]int{}, shas: map[string]bool{}}
-			repos[name] = rc
-		}
-		rc.Activities++
-		rc.ByType[feed[i].OpType]++
-		if commits, ok := slim["commits"].([]map[string]string); ok {
-			for _, c := range commits {
-				rc.shas[c["sha"]] = true
-				allShas[name+"@"+c["sha"]] = true
-			}
-		}
-		if n, ok := slim["commits_total"].(int); ok {
-			rc.CommitsPushed += n
-			pushed += n
-		}
-	}
-	for _, rc := range repos {
-		rc.CommitsListed = len(rc.shas)
-	}
-	result := map[string]any{
-		"username":        username,
-		"date":            date,
-		"total":           len(activities),
-		"truncated":       truncated,
-		"by_type":         counts,
-		"commits_pushed":  pushed,
-		"commits_listed":  len(allShas),
-		"by_repo":         repos,
-		"activities":      activities,
-		"authors_checked": len(emails) > 0,
-	}
-	if len(mirrors) > 0 {
-		result["mirror_syncs"] = mirrors
-	}
-	return to.TextResult(result)
 }
 
 // shortSHA cuts a commit hash to the ten characters shown in subject. Gitea resolves the short hash in

@@ -156,7 +156,7 @@ Once configured, try `list all my repositories` in the chat box.
 | get_gitea_mcp_server_version | version      | Read   | Get the Gitea MCP server version |
 | get_me                       | user         | Read   | Get the current authenticated user |
 | get_user_orgs                | user         | Read   | List the current user's organizations |
-| list_user_activities         | user         | Read   | List what a user did on one day (activity feed) |
+| list_user_activities         | user         | Read   | List what a user did on a day or in a period (activity feed) |
 | create_organization          | user         | Write  | Create a new organization |
 | search_users                 | search       | Read   | Search for users |
 | search_org_teams             | search       | Read   | Search teams within an organization |

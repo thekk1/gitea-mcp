@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"gitea.com/gitea/gitea-mcp/pkg/annotation"
+	"gitea.com/gitea/gitea-mcp/pkg/batch"
 	"gitea.com/gitea/gitea-mcp/pkg/gitea"
 	"gitea.com/gitea/gitea-mcp/pkg/params"
 	"gitea.com/gitea/gitea-mcp/pkg/slim"
@@ -68,6 +69,7 @@ var (
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 		tool.Number("issue_number", tool.Description("required except for 'get_comment'/'get_assignee_candidates'")),
+		tool.Array("issue_numbers", tool.Description("several issues in one call instead of issue_number, up to 50: one entry per issue in results, with result or error"), tool.Items(map[string]any{"type": "number"})),
 		tool.Number("comment_id", tool.Description("for 'get_comment'")),
 		tool.Number("page", tool.Description("for 'get_blocked_by'/'get_blocking'"), tool.Default(1)),
 		tool.Number("per_page", tool.Description("for 'get_blocked_by'/'get_blocking'"), tool.Default(30)),
@@ -119,6 +121,9 @@ func init() {
 }
 
 func issueReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, many := args["issue_numbers"]; many {
+		return batch.Each(ctx, args, "issue_numbers", "issue_number", issueReadFn)
+	}
 	method, err := params.GetString(args, "method")
 	if err != nil {
 		return to.ErrorResult(err)

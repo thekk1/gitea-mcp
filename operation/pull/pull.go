@@ -9,6 +9,7 @@ import (
 
 	"gitea.com/gitea/gitea-mcp/operation/issue"
 	"gitea.com/gitea/gitea-mcp/pkg/annotation"
+	"gitea.com/gitea/gitea-mcp/pkg/batch"
 	"gitea.com/gitea/gitea-mcp/pkg/gitea"
 	"gitea.com/gitea/gitea-mcp/pkg/log"
 	"gitea.com/gitea/gitea-mcp/pkg/params"
@@ -55,6 +56,7 @@ var (
 		tool.String("owner", tool.Required(), tool.Description(params.OwnerDesc)),
 		tool.String("repo", tool.Required(), tool.Description(params.RepoDesc)),
 		tool.Number("pull_number", tool.Description("required except for 'get_by_branches'/'get_by_commit'/'get_reviewer_candidates'")),
+		tool.Array("pull_numbers", tool.Description("several pull requests in one call instead of pull_number, up to 50: one entry per pull request in results, with result or error"), tool.Items(map[string]any{"type": "number"})),
 		tool.String("base", tool.Description("base branch (for 'get_by_branches')")),
 		tool.String("head", tool.Description("head branch (for 'get_by_branches')")),
 		tool.String("sha", tool.Description("commit SHA (for 'get_by_commit')")),
@@ -142,6 +144,9 @@ func init() {
 }
 
 func pullRequestReadFn(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, many := args["pull_numbers"]; many {
+		return batch.Each(ctx, args, "pull_numbers", "pull_number", pullRequestReadFn)
+	}
 	method, err := params.GetString(args, "method")
 	if err != nil {
 		return to.ErrorResult(err)
