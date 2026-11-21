@@ -18,7 +18,7 @@ func TestListUserActivities(t *testing.T) {
 	feed := []map[string]any{
 		{"op_type": "commit_repo", "ref_name": "refs/heads/main", "created": "2026-11-05T16:10:00+01:00",
 			"repo":    map[string]any{"full_name": "acme/docs", "html_url": "https://git.example/acme/docs"},
-			"content": `{"Commits":[{"Sha1":"0123456789abcdef","Message":"Fix typo\n\nlong body","AuthorEmail":"ann@example.com","AuthorName":"Ann"}],"Len":7,"CompareURL":"acme/docs/compare/aaa...bbb"}`},
+			"content": `{"Commits":[{"Sha1":"0123456789abcdef","Message":"Fix typo\n\nlong body","AuthorEmail":"ann@example.com","AuthorName":"Ann"}],"Len":7,"CompareURL":"acme/docs/compare/7c4e729419c61fcc36f96ceedb9a562428bc0f16...24c14df6f6b04181e817a7175d042f1909fcbc97"}`},
 		{"op_type": "commit_repo", "ref_name": "refs/heads/main", "created": "2026-11-05T15:30:00+01:00",
 			"repo":    map[string]any{"full_name": "acme/docs", "html_url": "https://git.example/acme/docs/"},
 			"content": `{"Commits":[{"Sha1":"fedcba9876543210","Message":"Add page","AuthorEmail":"JDoe@Example.com","AuthorName":"J. Doe"}],"Len":1,"CompareURL":"acme/docs/compare/ccc...fedcba9876543210"}`},
@@ -121,11 +121,11 @@ func TestListUserActivities(t *testing.T) {
 		t.Error("authors_checked = false with the user's addresses known")
 	}
 	last, _ := json.Marshal(got.Activities[49])
-	if want := `{"commits":[{"author":"Ann","sha":"0123456789","subject":"Fix typo"}],"commits_total":7,"created":"2026-11-05T16:10:00+01:00","html_url":"https://git.example/acme/docs/compare/aaa...bbb","op_type":"commit_repo","ref":"main","repo":"acme/docs","subject":"7 commits: 0123456789 Fix typo"}`; string(last) != want {
+	if want := `{"commits":[{"author":"Ann","sha":"0123456789","subject":"Fix typo"}],"commits_total":7,"created":"2026-11-05T16:10:00+01:00","html_url":"https://git.example/acme/docs/compare/7c4e729419...24c14df6f6","op_type":"commit_repo","ref":"main","repo":"acme/docs","subject":"7 commits: 0123456789 Fix typo"}`; string(last) != want {
 		t.Errorf("push = %s, want %s", last, want)
 	}
 	single, _ := json.Marshal(got.Activities[48])
-	if want := `{"commits":[{"sha":"fedcba9876","subject":"Add page"}],"commits_total":1,"created":"2026-11-05T15:30:00+01:00","html_url":"https://git.example/acme/docs/commit/fedcba9876543210","op_type":"commit_repo","ref":"main","repo":"acme/docs","subject":"fedcba9876 Add page"}`; string(single) != want {
+	if want := `{"commits":[{"sha":"fedcba9876","subject":"Add page"}],"commits_total":1,"created":"2026-11-05T15:30:00+01:00","html_url":"https://git.example/acme/docs/commit/fedcba9876","op_type":"commit_repo","ref":"main","repo":"acme/docs","subject":"fedcba9876 Add page"}`; string(single) != want {
 		t.Errorf("single push = %s, want %s", single, want)
 	}
 	if issue := got.Activities[47]; issue["html_url"] != nil {
@@ -166,6 +166,19 @@ func TestPushWithoutNewCommits(t *testing.T) {
 		slim, _ := slimActivity(a, nil)
 		if got, _ := json.Marshal(slim); string(got) != tc.want {
 			t.Errorf("push = %s, want %s", got, tc.want)
+		}
+	}
+}
+
+func TestShortCompare(t *testing.T) {
+	for in, want := range map[string]string{
+		"7c4e729419c61fcc36f96ceedb9a562428bc0f16...24c14df6f6b04181e817a7175d042f1909fcbc97": "7c4e729419...24c14df6f6",
+		"main...feature/x": "main...feature/x",
+		"aaa...bbb":        "aaa...bbb",
+		"7c4e729419c61fcc36f96ceedb9a562428bc0f16": "7c4e729419c61fcc36f96ceedb9a562428bc0f16",
+	} {
+		if got := shortCompare(in); got != want {
+			t.Errorf("shortCompare(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

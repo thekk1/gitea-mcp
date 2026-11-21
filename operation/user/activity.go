@@ -34,7 +34,7 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"Only actions the user performed, only in repositories the caller may see. The day is taken in the time zone "+
 		"of the Gitea server. by_repo and the commits_* fields give the counts per repository and in all; take numbers "+
 		"from them instead of counting the list. A push has its commit subjects in subject (one line) and the address "+
-		"of its commit, or of the comparison of its commits, in html_url; a push without new commits says so in "+
+		"of its commit, or of the comparison of its commits, in html_url, with the ten-character hashes of subject; a push without new commits says so in "+
 		"subject and links its branch; a newly created branch has subject \"created branch <name>\" and links it. An issue or pull request has its address in html_url. A commit whose author "+
 		"is someone else carries the author's name in author. Syncs of pull mirrors "+
 		"the user owns are no actions of the user: Gitea runs them itself and books them on the mirror's owner, and "+
@@ -203,6 +203,31 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 	return to.TextResult(result)
 }
 
+// shortSHA cuts a commit hash to the ten characters shown in subject. Gitea resolves the short hash in
+// commit and compare addresses, and a link with the hash of its text cannot be garbled in copying.
+func shortSHA(sha string) string {
+	if len(sha) > 10 {
+		return sha[:10]
+	}
+	return sha
+}
+
+// shortCompare shortens both hashes of a comparison "<base>...<head>"; a side that is no hash stays.
+func shortCompare(compare string) string {
+	base, head, ok := strings.Cut(compare, "...")
+	if !ok {
+		return compare
+	}
+	return shortIfHash(base) + "..." + shortIfHash(head)
+}
+
+func shortIfHash(s string) string {
+	if len(s) < 40 || strings.Trim(s, "0123456789abcdef") != "" {
+		return s
+	}
+	return shortSHA(s)
+}
+
 // mirrorCount sums the syncs of one pull mirror: Gitea books them on the mirror's owner, so the feed of
 // only-performed-by lists them, but the owner did not push these commits. commits_by_user holds the listed
 // mirrored commits whose author address is one of the user's.
@@ -256,10 +281,7 @@ func slimActivity(a feedActivity, emails map[string]bool) (map[string]any, []map
 			commits := make([]map[string]string, 0, len(push.Commits))
 			subjects := make([]string, 0, len(push.Commits))
 			for _, c := range push.Commits {
-				sha := c.Sha1
-				if len(sha) > 10 {
-					sha = sha[:10]
-				}
+				sha := shortSHA(c.Sha1)
 				subject, _, _ := strings.Cut(strings.TrimSpace(c.Message), "\n")
 				commit := map[string]string{"sha": sha, "subject": subject}
 				if author := strings.ToLower(strings.TrimSpace(c.AuthorEmail)); len(emails) > 0 && author != "" {
@@ -292,9 +314,9 @@ func slimActivity(a feedActivity, emails map[string]bool) (map[string]any, []map
 			case repoURL == "":
 			case len(push.Commits) > 0:
 				if _, compare, ok := strings.Cut(push.CompareURL, "/compare/"); ok && total > 1 && compare != "" {
-					out["html_url"] = repoURL + "/compare/" + compare
+					out["html_url"] = repoURL + "/compare/" + shortCompare(compare)
 				} else {
-					out["html_url"] = repoURL + "/commit/" + push.Commits[0].Sha1
+					out["html_url"] = repoURL + "/commit/" + shortSHA(push.Commits[0].Sha1)
 				}
 			case ref != "" && strings.HasPrefix(a.RefName, "refs/heads/"):
 				out["html_url"] = repoURL + "/src/branch/" + pathEscapeRef(ref)
