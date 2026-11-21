@@ -35,7 +35,7 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"of the Gitea server. by_repo and the commits_* fields give the counts per repository and in all; take numbers "+
 		"from them instead of counting the list. A push has its commit subjects in subject (one line) and the address "+
 		"of its commit, or of the comparison of its commits, in html_url; a push without new commits says so in "+
-		"subject and links its branch. An issue or pull request has its address in html_url. A commit whose author "+
+		"subject and links its branch; a newly created branch has subject \"created branch <name>\" and links it. An issue or pull request has its address in html_url. A commit whose author "+
 		"is someone else carries the author's name in author. Syncs of pull mirrors "+
 		"the user owns are no actions of the user: Gitea runs them itself and books them on the mirror's owner, and "+
 		"their commits are those of the authors in the mirrored source. They are left out of activities and the "+
@@ -244,7 +244,15 @@ func slimActivity(a feedActivity, emails map[string]bool) (map[string]any, []map
 	switch a.OpType {
 	case "commit_repo", "mirror_sync_push":
 		var push pushContent
-		if json.Unmarshal([]byte(a.Content), &push) == nil {
+		ref, _ := out["ref"].(string)
+		if strings.TrimSpace(a.Content) == "" && a.OpType == "commit_repo" && strings.HasPrefix(a.RefName, "refs/heads/") {
+			// Gitea books a new branch as commit_repo without content (feed notifier CreateRef);
+			// its commits, if new, come in a push of their own
+			out["subject"] = "created branch " + ref
+			if repoURL != "" {
+				out["html_url"] = repoURL + "/src/branch/" + pathEscapeRef(ref)
+			}
+		} else if json.Unmarshal([]byte(a.Content), &push) == nil {
 			commits := make([]map[string]string, 0, len(push.Commits))
 			subjects := make([]string, 0, len(push.Commits))
 			for _, c := range push.Commits {
@@ -269,7 +277,6 @@ func slimActivity(a feedActivity, emails map[string]bool) (map[string]any, []map
 			total := max(push.Len, len(push.Commits))
 			out["commits_total"] = total
 			// subject and html_url give a push one line and one link, so a table of the day needs no nested field
-			ref, _ := out["ref"].(string)
 			switch {
 			case len(subjects) == 1 && total == 1:
 				out["subject"] = shorten(subjects[0])

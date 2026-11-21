@@ -155,6 +155,9 @@ func TestPushWithoutNewCommits(t *testing.T) {
 			`{"commits":[],"commits_total":0,"created":"2026-11-05T16:06:35+01:00","html_url":"https://git.example/acme/docs/src/branch/feature/x%20y","op_type":"commit_repo","ref":"feature/x y","repo":"acme/docs","subject":"push to feature/x y without new commits"}`},
 		{`{"op_type":"commit_repo","created":"2026-11-05T16:06:35+01:00","repo":{"full_name":"acme/docs"},"content":"{}"}`,
 			`{"commits":[],"commits_total":0,"created":"2026-11-05T16:06:35+01:00","op_type":"commit_repo","repo":"acme/docs","subject":"push without new commits"}`},
+		{`{"op_type":"commit_repo","ref_name":"refs/heads/fix/issue-1","created":"2026-07-12T20:29:22+02:00",
+			"repo":{"full_name":"acme/docs","html_url":"https://git.example/acme/docs"},"content":""}`,
+			`{"created":"2026-07-12T20:29:22+02:00","html_url":"https://git.example/acme/docs/src/branch/fix/issue-1","op_type":"commit_repo","ref":"fix/issue-1","repo":"acme/docs","subject":"created branch fix/issue-1"}`},
 	} {
 		var a feedActivity
 		if err := json.Unmarshal([]byte(tc.feed), &a); err != nil {
