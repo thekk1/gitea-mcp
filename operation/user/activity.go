@@ -37,7 +37,9 @@ var ListUserActivitiesTool = tool.NewDefinition(
 		"Only actions the user performed, only in repositories the caller may see. Days are taken in the time zone "+
 		"of the Gitea server. total, by_type, by_day, by_repo, pushes, branches_created and the commits_* fields give "+
 		"the counts of the whole period; take numbers from them instead of counting or adding. pushes and "+
-		"branches_created split the commit_repo entries of by_type. A push has its commit subjects in subject (one line) and the address "+
+		"branches_created split the commit_repo entries of by_type. Each by_repo entry has the same counts for its "+
+		"repository (by_type, pushes, branches_created, commits_pushed, commits_listed) and, for a period, by_day "+
+		"with them per day. A push has its commit subjects in subject (one line) and the address "+
 		"of its commit, or of the comparison of its commits, in html_url, with the ten-character hashes of subject; a push without new commits says so in "+
 		"subject and links its branch; a newly created branch has subject \"created branch <name>\" and links it. An issue or pull request has its address in html_url. A commit whose author "+
 		"is someone else carries the author's name in author. Syncs of pull mirrors "+
@@ -178,21 +180,41 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 			activities = append(activities, slim)
 			byDay[days[d]]++
 			counts[feed[i].OpType]++
-			if feed[i].OpType == "commit_repo" {
-				if subject, _ := slim["subject"].(string); strings.HasPrefix(subject, "created branch ") {
-					branchesCreated++
-				} else {
-					pushes++
-				}
-			}
 			name, _ := slim["repo"].(string)
 			rc := repos[name]
 			if rc == nil {
 				rc = &repoCount{ByType: map[string]int{}, shas: map[string]bool{}}
+				if len(days) > 1 {
+					rc.ByDay = map[string]*dayCount{}
+				}
 				repos[name] = rc
 			}
 			rc.Activities++
 			rc.ByType[feed[i].OpType]++
+			var dc *dayCount
+			if rc.ByDay != nil {
+				if dc = rc.ByDay[days[d]]; dc == nil {
+					dc = &dayCount{ByType: map[string]int{}}
+					rc.ByDay[days[d]] = dc
+				}
+				dc.Activities++
+				dc.ByType[feed[i].OpType]++
+			}
+			if feed[i].OpType == "commit_repo" {
+				if subject, _ := slim["subject"].(string); strings.HasPrefix(subject, "created branch ") {
+					branchesCreated++
+					rc.BranchesCreated++
+					if dc != nil {
+						dc.BranchesCreated++
+					}
+				} else {
+					pushes++
+					rc.Pushes++
+					if dc != nil {
+						dc.Pushes++
+					}
+				}
+			}
 			if commits, ok := slim["commits"].([]map[string]string); ok {
 				for _, c := range commits {
 					rc.shas[c["sha"]] = true
@@ -202,6 +224,9 @@ func ListUserActivitiesFn(ctx context.Context, args map[string]any) (*mcp.CallTo
 			if n, ok := slim["commits_total"].(int); ok {
 				rc.CommitsPushed += n
 				pushed += n
+				if dc != nil {
+					dc.CommitsPushed += n
+				}
 			}
 		}
 	}
@@ -339,13 +364,26 @@ func addEmail(emails map[string]bool, email string) {
 }
 
 // repoCount sums one repository's activities: commits_pushed adds commits_total of every push (a commit
-// pushed to two branches counts twice), commits_listed counts the distinct commits the feed lists.
+// pushed to two branches counts twice), commits_listed counts the distinct commits the feed lists. pushes
+// and branches_created split its commit_repo entries; by_day holds the same counts per day of a period.
 type repoCount struct {
-	Activities    int            `json:"activities"`
-	ByType        map[string]int `json:"by_type"`
-	CommitsPushed int            `json:"commits_pushed"`
-	CommitsListed int            `json:"commits_listed"`
-	shas          map[string]bool
+	Activities      int                  `json:"activities"`
+	ByType          map[string]int       `json:"by_type"`
+	Pushes          int                  `json:"pushes"`
+	BranchesCreated int                  `json:"branches_created"`
+	CommitsPushed   int                  `json:"commits_pushed"`
+	CommitsListed   int                  `json:"commits_listed"`
+	ByDay           map[string]*dayCount `json:"by_day,omitempty"`
+	shas            map[string]bool
+}
+
+// dayCount sums one repository's activities on one day.
+type dayCount struct {
+	Activities      int            `json:"activities"`
+	ByType          map[string]int `json:"by_type"`
+	Pushes          int            `json:"pushes"`
+	BranchesCreated int            `json:"branches_created"`
+	CommitsPushed   int            `json:"commits_pushed"`
 }
 
 // slimActivity shortens one feed entry. With the user's addresses known, a listed commit by another author

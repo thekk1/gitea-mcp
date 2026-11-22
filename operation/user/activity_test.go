@@ -234,6 +234,18 @@ func TestListUserActivitiesPeriod(t *testing.T) {
 		BranchesCreated int              `json:"branches_created"`
 		Pushed          int              `json:"commits_pushed"`
 		Activities      []map[string]any `json:"activities"`
+		ByRepo          map[string]struct {
+			Pushes          int `json:"pushes"`
+			BranchesCreated int `json:"branches_created"`
+			CommitsPushed   int `json:"commits_pushed"`
+			ByDay           map[string]struct {
+				Activities      int            `json:"activities"`
+				ByType          map[string]int `json:"by_type"`
+				Pushes          int            `json:"pushes"`
+				BranchesCreated int            `json:"branches_created"`
+				CommitsPushed   int            `json:"commits_pushed"`
+			} `json:"by_day"`
+		} `json:"by_repo"`
 	}
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
 		t.Fatal(err)
@@ -242,6 +254,13 @@ func TestListUserActivitiesPeriod(t *testing.T) {
 		fmt.Sprint(got.ByDay) != "map[2026-07-12:2 2026-07-13:1]" || got.ByType["commit_repo"] != 2 ||
 		got.Pushes != 1 || got.BranchesCreated != 1 || got.Pushed != 1 {
 		t.Errorf("summary = %+v", got)
+	}
+	app := got.ByRepo["acme/app"]
+	d12, d13 := app.ByDay["2026-07-12"], app.ByDay["2026-07-13"]
+	if app.Pushes != 1 || app.BranchesCreated != 1 || app.CommitsPushed != 1 || len(app.ByDay) != 2 ||
+		d12.Activities != 2 || d12.Pushes != 1 || d12.BranchesCreated != 1 || d12.CommitsPushed != 1 ||
+		d13.Activities != 1 || d13.ByType["create_pull_request"] != 1 || d13.Pushes != 0 {
+		t.Errorf("by_repo = %+v", got.ByRepo)
 	}
 	var created []string
 	for _, a := range got.Activities {
