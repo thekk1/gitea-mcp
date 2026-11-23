@@ -92,7 +92,7 @@ func TestBodyWithAttachments(t *testing.T) {
 		{Name: "log.txt", DownloadURL: "https://example/log.txt"},
 	}
 	got := BodyWithAttachments("see attached", atts)
-	want := "see attached\n\n[shot.png](https://example/shot.png)\n[log.txt](https://example/log.txt)"
+	want := "see attached\n\n" + AttachmentsHeader + "\n[shot.png](https://example/shot.png)\n[log.txt](https://example/log.txt)"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -100,7 +100,7 @@ func TestBodyWithAttachments(t *testing.T) {
 	if got := BodyWithAttachments("only body", nil); got != "only body" {
 		t.Errorf("nil attachments should return body unchanged, got %q", got)
 	}
-	if got := BodyWithAttachments("", atts); got != "[shot.png](https://example/shot.png)\n[log.txt](https://example/log.txt)" {
+	if got := BodyWithAttachments("", atts); got != AttachmentsHeader+"\n[shot.png](https://example/shot.png)\n[log.txt](https://example/log.txt)" {
 		t.Errorf("empty body should drop separator, got %q", got)
 	}
 	skipped := []*gitea_sdk.Attachment{nil, {Name: "noop", DownloadURL: ""}}

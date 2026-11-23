@@ -51,6 +51,11 @@ func LabelNames(labels []*gitea_sdk.Label) []string {
 	return out
 }
 
+// AttachmentsHeader opens the list of attachment links that BodyWithAttachments appends to a body. Gitea
+// keeps the attachments apart from the text; the line tells a reader that the list is no part of it, so it
+// is not written back with the text.
+const AttachmentsHeader = "Attachments (added by gitea-mcp when reading, not part of the text):"
+
 func BodyWithAttachments(body string, atts []*gitea_sdk.Attachment) string {
 	links := make([]string, 0, len(atts))
 	for _, a := range atts {
@@ -62,7 +67,7 @@ func BodyWithAttachments(body string, atts []*gitea_sdk.Attachment) string {
 	if len(links) == 0 {
 		return body
 	}
-	joined := strings.Join(links, "\n")
+	joined := AttachmentsHeader + "\n" + strings.Join(links, "\n")
 	if body == "" {
 		return joined
 	}
